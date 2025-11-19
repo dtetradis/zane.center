@@ -12,10 +12,10 @@ export default function HomePage() {
           Book appointments at beauty salons, barbers, and wellness centers
         </p>
         <div className="flex gap-4 justify-center">
-          <Link href="/demo">
-            <Button size="lg">View Demo Store</Button>
+          <Link href="/test-salon">
+            <Button size="lg">View Test Store</Button>
           </Link>
-          <Link href="/demo/dashboard/login">
+          <Link href="/test-salon/dashboard/login">
             <Button size="lg" variant="outline">Store Owner Login</Button>
           </Link>
         </div>
