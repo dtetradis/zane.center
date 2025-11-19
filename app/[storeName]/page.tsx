@@ -52,7 +52,7 @@ export default async function StorePage({ params }: { params: { storeName: strin
       {store?.categories && store.categories.length > 0 && (
         <div className="mb-8">
           <div className="flex flex-wrap gap-2 justify-center">
-            {store.categories.map((category) => (
+            {store.categories.map((category: string) => (
               <span
                 key={category}
                 className="px-4 py-2 bg-primary/10 text-primary rounded-full text-sm font-medium"
