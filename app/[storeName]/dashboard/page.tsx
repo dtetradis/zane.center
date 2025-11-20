@@ -23,6 +23,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
   const [allReservations, setAllReservations] = useState<Reservation[]>([]);
   const [filteredReservations, setFilteredReservations] = useState<Reservation[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [totalReservations, setTotalReservations] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
@@ -131,6 +132,15 @@ export default function DashboardPage({ params }: { params: { storeName: string 
           .order('index', { ascending: true });
 
         setServices(servicesData || []);
+
+        // Get employees
+        const { data: employeesData } = await supabase
+          .from('users')
+          .select('id, email, category, role')
+          .eq('id_store', storeData.id)
+          .in('role', ['employee', 'admin', 'owner']);
+
+        setEmployees(employeesData || []);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -355,23 +365,98 @@ export default function DashboardPage({ params }: { params: { storeName: string 
             </Card>
           </div>
 
-          {/* Today's Reservations */}
+          {/* Today's Reservations by Employee */}
           <div>
-            <h2 className="text-2xl font-bold text-text mb-4">Today's Reservations</h2>
-            {todayReservations.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {todayReservations.map((reservation) => (
-                  <ReservationCard
-                    key={reservation.id}
-                    reservation={reservation}
-                    showActions={false}
-                  />
-                ))}
+            <h2 className="text-2xl font-bold text-text mb-4">Today's Schedule</h2>
+            {employees.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {employees.map((employee) => {
+                  const employeeReservations = todayReservations.filter(
+                    (r) => r.employee === employee.email
+                  );
+
+                  return (
+                    <Card key={employee.id} className="flex flex-col">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base font-semibold text-primary">
+                          {employee.email.split('@')[0]}
+                        </CardTitle>
+                        <p className="text-xs text-text-secondary">{employee.category}</p>
+                      </CardHeader>
+                      <CardContent className="flex-1 space-y-2">
+                        {employeeReservations.length > 0 ? (
+                          employeeReservations.map((reservation) => (
+                            <div
+                              key={reservation.id}
+                              className="p-3 bg-surface-secondary rounded-lg border border-border"
+                            >
+                              <p className="font-medium text-sm text-text">{reservation.name}</p>
+                              <p className="text-xs text-text-secondary mt-1">
+                                {new Date(reservation.date_time).toLocaleTimeString('el-GR', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                              <p className="text-xs text-text-secondary">
+                                {reservation.service_name}
+                              </p>
+                              <p className="text-xs text-primary mt-1">
+                                {reservation.service_duration} min
+                              </p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-text-secondary italic py-4 text-center">
+                            No reservations
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+
+                {/* Unassigned reservations column */}
+                {todayReservations.filter((r) => !r.employee || !employees.find(e => e.email === r.employee)).length > 0 && (
+                  <Card className="flex flex-col">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-semibold text-text-secondary">
+                        Unassigned
+                      </CardTitle>
+                      <p className="text-xs text-text-secondary">No employee assigned</p>
+                    </CardHeader>
+                    <CardContent className="flex-1 space-y-2">
+                      {todayReservations
+                        .filter((r) => !r.employee || !employees.find(e => e.email === r.employee))
+                        .map((reservation) => (
+                          <div
+                            key={reservation.id}
+                            className="p-3 bg-surface-secondary rounded-lg border border-border"
+                          >
+                            <p className="font-medium text-sm text-text">{reservation.name}</p>
+                            <p className="text-xs text-text-secondary mt-1">
+                              {new Date(reservation.date_time).toLocaleTimeString('el-GR', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </p>
+                            <p className="text-xs text-text-secondary">
+                              {reservation.service_name}
+                            </p>
+                            <p className="text-xs text-primary mt-1">
+                              {reservation.service_duration} min
+                            </p>
+                          </div>
+                        ))}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             ) : (
               <Card>
                 <CardContent className="py-8 text-center text-text-secondary">
-                  No reservations for today
+                  {todayReservations.length > 0
+                    ? 'No employees found. Please add employees to see schedule.'
+                    : 'No reservations for today'}
                 </CardContent>
               </Card>
             )}
