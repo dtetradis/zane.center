@@ -9,12 +9,13 @@ export default async function DashboardLayout({
   children: React.ReactNode;
   params: { storeName: string };
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // TODO: Re-enable authentication for production
+  // const supabase = await createClient();
+  // const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect(`/${params.storeName}/dashboard/login`);
-  }
+  // if (!user) {
+  //   redirect(`/${params.storeName}/dashboard/login`);
+  // }
 
   return (
     <div className="min-h-screen bg-background">
