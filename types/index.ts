@@ -47,10 +47,13 @@ export interface Store {
   store_name?: string; // Database field name
   title: string;
   workDays: WorkDay[];
+  work_days?: WorkDay[]; // Database field name
   categories: string[];
   blockedDates: string[];
+  blocked_dates?: string[]; // Database field name
   whitelist: string[];
   themeColors?: ThemeColors;
+  theme_colors?: ThemeColors; // Database field name
   created_at: string;
 }
 

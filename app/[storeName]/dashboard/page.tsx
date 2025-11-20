@@ -109,9 +109,10 @@ export default function DashboardPage({ params }: { params: { storeName: string 
       if (storeData) {
         setStore(storeData);
         setWhitelist(storeData.whitelist || []);
-        if (storeData.theme_colors) {
-          setColorForm(storeData.theme_colors);
-          setColors(storeData.theme_colors);
+        const themeColors = storeData.theme_colors || storeData.themeColors;
+        if (themeColors) {
+          setColorForm(themeColors);
+          setColors(themeColors);
         }
 
 
@@ -331,16 +332,18 @@ export default function DashboardPage({ params }: { params: { storeName: string 
 
   const handleBlockDate = () => {
     if (blockedDate && store) {
-      const newBlockedDates = [...(store.blockedDates || []), blockedDate];
-      setStore({ ...store, blockedDates: newBlockedDates });
+      const currentBlockedDates = store.blocked_dates || store.blockedDates || [];
+      const newBlockedDates = [...currentBlockedDates, blockedDate];
+      setStore({ ...store, blockedDates: newBlockedDates, blocked_dates: newBlockedDates });
       setBlockedDate('');
     }
   };
 
   const handleUnblockDate = (date: string) => {
     if (store) {
-      const newBlockedDates = store.blockedDates.filter((d) => d !== date);
-      setStore({ ...store, blockedDates: newBlockedDates });
+      const currentBlockedDates = store.blocked_dates || store.blockedDates || [];
+      const newBlockedDates = currentBlockedDates.filter((d) => d !== date);
+      setStore({ ...store, blockedDates: newBlockedDates, blocked_dates: newBlockedDates });
     }
   };
 
@@ -383,7 +386,8 @@ export default function DashboardPage({ params }: { params: { storeName: string 
   // Generate time slots for the day
   const generateTimeSlots = () => {
     const dayName = selectedDate.toFormat('EEEE');
-    const workDay = store.workDays?.find(wd => wd.day === dayName);
+    const workDays = store.work_days || store.workDays || [];
+    const workDay = workDays.find(wd => wd.day === dayName);
 
     if (!workDay || !workDay.enabled) return { slots: [], isOpen: false };
 
@@ -720,7 +724,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
               </div>
 
               <div className="space-y-2">
-                {store.blockedDates?.map((date) => (
+                {(store.blocked_dates || store.blockedDates || []).map((date) => (
                   <div key={date} className="flex items-center justify-between bg-surface p-2 rounded">
                     <span className="text-text">{date}</span>
                     <Button size="sm" variant="danger" onClick={() => handleUnblockDate(date)}>
