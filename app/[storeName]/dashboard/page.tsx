@@ -215,7 +215,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
         note: newReservationForm.note,
         date_time: toGreekISO(newReservationSlot.time.toJSDate()),
         service_duration: selectedService.duration,
-        service_name: selectedService.serviceName,
+        service_name: (selectedService as any).service_name || selectedService.serviceName,
         id_store: store.id,
         employee: newReservationSlot.employee,
         profession: selectedService.profession,
@@ -970,7 +970,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                 <option value="">Select a service</option>
                 {services.map((service) => (
                   <option key={service.id} value={service.id}>
-                    {service.serviceName} - {service.duration} min - €{service.price}
+                    {(service as any).service_name || service.serviceName} - {service.duration} min - €{service.price}
                   </option>
                 ))}
               </select>

@@ -31,6 +31,7 @@ export interface Service {
   id_store: string;
   index: number;
   serviceName: string;
+  service_name?: string; // Database field name
   duration: number;
   price: number;
   description?: string;
