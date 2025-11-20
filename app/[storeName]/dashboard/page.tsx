@@ -398,10 +398,10 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                                 })}
                               </p>
                               <p className="text-xs text-text-secondary">
-                                {reservation.service_name}
+                                {reservation.service_name || reservation.serviceName}
                               </p>
                               <p className="text-xs text-primary mt-1">
-                                {reservation.service_duration} min
+                                {reservation.service_duration || reservation.serviceDuration} min
                               </p>
                             </div>
                           ))
@@ -440,10 +440,10 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                               })}
                             </p>
                             <p className="text-xs text-text-secondary">
-                              {reservation.service_name}
+                              {reservation.service_name || reservation.serviceName}
                             </p>
                             <p className="text-xs text-primary mt-1">
-                              {reservation.service_duration} min
+                              {reservation.service_duration || reservation.serviceDuration} min
                             </p>
                           </div>
                         ))}

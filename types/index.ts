@@ -17,7 +17,9 @@ export interface Reservation {
   note?: string;
   date_time: string;
   serviceDuration: number;
+  service_duration?: number; // Database field name
   serviceName: string;
+  service_name?: string; // Database field name
   id_store: string;
   employee?: string;
   profession: string;
