@@ -385,7 +385,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
     const dayName = selectedDate.toFormat('EEEE');
     const workDay = store.workDays?.find(wd => wd.day === dayName);
 
-    if (!workDay || !workDay.enabled) return [];
+    if (!workDay || !workDay.enabled) return { slots: [], isOpen: false };
 
     const [startHour, startMin] = workDay.startTime.split(':').map(Number);
     const [endHour, endMin] = workDay.endTime.split(':').map(Number);
@@ -399,10 +399,10 @@ export default function DashboardPage({ params }: { params: { storeName: string 
       current = current.plus({ minutes: 15 });
     }
 
-    return slots;
+    return { slots, isOpen: true };
   };
 
-  const timeSlots = generateTimeSlots();
+  const { slots: timeSlots, isOpen } = generateTimeSlots();
 
   // Check if a time slot has a reservation for an employee
   const getReservationAtSlot = (employeeEmail: string, slotTime: DateTime) => {
@@ -474,7 +474,19 @@ export default function DashboardPage({ params }: { params: { storeName: string 
           </div>
 
           {/* Schedule Grid */}
-          {timeSlots.length > 0 && employees.length > 0 ? (
+          {!isOpen ? (
+            <Card>
+              <CardContent className="py-8 text-center text-text-secondary">
+                Store is closed on this day.
+              </CardContent>
+            </Card>
+          ) : employees.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-text-secondary">
+                No employees found. Please add employees to manage schedule.
+              </CardContent>
+            </Card>
+          ) : (
             <div className="overflow-x-auto">
               <div className="inline-block min-w-full">
                 <div className="grid gap-0 border border-border rounded-lg overflow-hidden" style={{ gridTemplateColumns: `80px repeat(${employees.length}, minmax(150px, 1fr))` }}>
@@ -495,75 +507,73 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                   ))}
 
                   {/* Time Slots */}
-                  {timeSlots.map((slot) => {
-                    const isHour = slot.minute === 0;
-                    return (
-                      <>
-                        {/* Time Label */}
-                        <div
-                          key={`time-${slot.toISO()}`}
-                          className={`border-r border-border p-2 text-xs ${
-                            isHour ? 'font-semibold border-t border-t-border' : 'border-t border-t-border/30'
-                          }`}
-                        >
-                          {slot.toFormat('HH:mm')}
-                        </div>
+                  {timeSlots.length > 0 ? (
+                    timeSlots.map((slot) => {
+                      const isHour = slot.minute === 0;
+                      return (
+                        <>
+                          {/* Time Label */}
+                          <div
+                            key={`time-${slot.toISO()}`}
+                            className={`border-r border-border p-2 text-xs ${
+                              isHour ? 'font-semibold border-t border-t-border' : 'border-t border-t-border/30'
+                            }`}
+                          >
+                            {slot.toFormat('HH:mm')}
+                          </div>
 
-                        {/* Employee Slots */}
-                        {employees.map((employee) => {
-                          const reservation = getReservationAtSlot(employee.email, slot);
-                          const isStartOfReservation = reservation && DateTime.fromISO(reservation.date_time).equals(slot);
+                          {/* Employee Slots */}
+                          {employees.map((employee) => {
+                            const reservation = getReservationAtSlot(employee.email, slot);
+                            const isStartOfReservation = reservation && DateTime.fromISO(reservation.date_time).equals(slot);
 
-                          return (
-                            <div
-                              key={`slot-${employee.id}-${slot.toISO()}`}
-                              className={`border-r last:border-r-0 border-border p-1 min-h-[40px] ${
-                                isHour ? 'border-t border-t-border' : 'border-t border-t-border/30'
-                              }`}
-                            >
-                              {reservation ? (
-                                isStartOfReservation ? (
-                                  <div className="bg-primary/10 border border-primary rounded p-2 text-xs h-full">
-                                    <p className="font-medium text-text truncate">{reservation.name}</p>
-                                    <p className="text-text-secondary truncate">
-                                      {reservation.service_name || reservation.serviceName}
-                                    </p>
-                                    <p className="text-primary">
-                                      {reservation.service_duration || reservation.serviceDuration} min
-                                    </p>
-                                  </div>
+                            return (
+                              <div
+                                key={`slot-${employee.id}-${slot.toISO()}`}
+                                className={`border-r last:border-r-0 border-border p-1 min-h-[40px] ${
+                                  isHour ? 'border-t border-t-border' : 'border-t border-t-border/30'
+                                }`}
+                              >
+                                {reservation ? (
+                                  isStartOfReservation ? (
+                                    <div className="bg-primary/10 border border-primary rounded p-2 text-xs h-full">
+                                      <p className="font-medium text-text truncate">{reservation.name}</p>
+                                      <p className="text-text-secondary truncate">
+                                        {reservation.service_name || reservation.serviceName}
+                                      </p>
+                                      <p className="text-primary">
+                                        {reservation.service_duration || reservation.serviceDuration} min
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <div className="bg-primary/5 h-full"></div>
+                                  )
                                 ) : (
-                                  <div className="bg-primary/5 h-full"></div>
-                                )
-                              ) : (
-                                <button
-                                  onClick={() => {
-                                    setNewReservationSlot({ employee: employee.email, time: slot });
-                                    setShowNewReservationModal(true);
-                                  }}
-                                  className="w-full h-full flex items-center justify-center text-text-secondary hover:text-primary hover:bg-surface-secondary rounded transition-colors"
-                                  title="Add reservation"
-                                >
-                                  <span className="text-xl">+</span>
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </>
-                    );
-                  })}
+                                  <button
+                                    onClick={() => {
+                                      setNewReservationSlot({ employee: employee.email, time: slot });
+                                      setShowNewReservationModal(true);
+                                    }}
+                                    className="w-full h-full flex items-center justify-center text-text-secondary hover:text-primary hover:bg-surface-secondary rounded transition-colors"
+                                    title="Add reservation"
+                                  >
+                                    <span className="text-xl">+</span>
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </>
+                      );
+                    })
+                  ) : (
+                    <div className="col-span-full p-8 text-center text-text-secondary">
+                      No time slots available. Please configure work hours in settings.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          ) : (
-            <Card>
-              <CardContent className="py-8 text-center text-text-secondary">
-                {employees.length === 0
-                  ? 'No employees found. Please add employees to manage schedule.'
-                  : 'Store is closed on this day.'}
-              </CardContent>
-            </Card>
           )}
         </div>
       )}
