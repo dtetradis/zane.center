@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useThemeStore } from '@/store/useThemeStore';
-import { getGreekDateTime } from '@/lib/supabase/utils';
+import { getGreekDateTime, toGreekISO } from '@/lib/supabase/utils';
+import { DateTime } from 'luxon';
 import type { Service, Store, Reservation } from '@/types';
 
 type Tab = 'overview' | 'reservations' | 'services' | 'settings';
@@ -19,7 +20,8 @@ export default function DashboardPage({ params }: { params: { storeName: string 
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [loading, setLoading] = useState(true);
   const [store, setStore] = useState<Store | null>(null);
-  const [todayReservations, setTodayReservations] = useState<Reservation[]>([]);
+  const [selectedDate, setSelectedDate] = useState(DateTime.now().setZone('Europe/Athens'));
+  const [dayReservations, setDayReservations] = useState<Reservation[]>([]);
   const [allReservations, setAllReservations] = useState<Reservation[]>([]);
   const [filteredReservations, setFilteredReservations] = useState<Reservation[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -28,6 +30,20 @@ export default function DashboardPage({ params }: { params: { storeName: string 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
+
+  // New reservation modal
+  const [showNewReservationModal, setShowNewReservationModal] = useState(false);
+  const [newReservationSlot, setNewReservationSlot] = useState<{
+    employee: string;
+    time: DateTime;
+  } | null>(null);
+  const [newReservationForm, setNewReservationForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    service: '',
+    note: '',
+  });
 
   // Services state
   const [showServiceModal, setShowServiceModal] = useState(false);
@@ -62,6 +78,12 @@ export default function DashboardPage({ params }: { params: { storeName: string 
   }, []);
 
   useEffect(() => {
+    if (store) {
+      fetchDayReservations();
+    }
+  }, [selectedDate, store]);
+
+  useEffect(() => {
     if (searchTerm) {
       const filtered = allReservations.filter(
         (r) =>
@@ -92,19 +114,6 @@ export default function DashboardPage({ params }: { params: { storeName: string 
           setColors(storeData.theme_colors);
         }
 
-        // Get today's reservations
-        const today = getGreekDateTime().startOf('day').toISO();
-        const tomorrow = getGreekDateTime().plus({ days: 1 }).startOf('day').toISO();
-
-        const { data: todayData } = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('id_store', storeData.id)
-          .gte('date_time', today)
-          .lt('date_time', tomorrow)
-          .order('date_time', { ascending: true });
-
-        setTodayReservations(todayData || []);
 
         // Get all reservations
         const { data: allData } = await supabase
@@ -149,6 +158,27 @@ export default function DashboardPage({ params }: { params: { storeName: string 
     }
   };
 
+  const fetchDayReservations = async () => {
+    if (!store) return;
+
+    try {
+      const dayStart = selectedDate.startOf('day').toISO();
+      const dayEnd = selectedDate.plus({ days: 1 }).startOf('day').toISO();
+
+      const { data } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id_store', store.id)
+        .gte('date_time', dayStart)
+        .lt('date_time', dayEnd)
+        .order('date_time', { ascending: true });
+
+      setDayReservations(data || []);
+    } catch (error) {
+      console.error('Error fetching day reservations:', error);
+    }
+  };
+
   const handleCancelReservation = async () => {
     if (!selectedReservation) return;
 
@@ -161,11 +191,57 @@ export default function DashboardPage({ params }: { params: { storeName: string 
       if (error) throw error;
 
       setAllReservations(allReservations.filter((r) => r.id !== selectedReservation.id));
-      setTodayReservations(todayReservations.filter((r) => r.id !== selectedReservation.id));
+      setDayReservations(dayReservations.filter((r) => r.id !== selectedReservation.id));
       setShowCancelModal(false);
       setSelectedReservation(null);
     } catch (error) {
       console.error('Error canceling reservation:', error);
+    }
+  };
+
+  const handleCreateReservation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newReservationSlot || !store) return;
+
+    try {
+      const selectedService = services.find(s => s.id === newReservationForm.service);
+      if (!selectedService) return;
+
+      const reservation = {
+        name: newReservationForm.name,
+        email: newReservationForm.email,
+        phone: newReservationForm.phone,
+        note: newReservationForm.note,
+        date_time: toGreekISO(newReservationSlot.time.toJSDate()),
+        service_duration: selectedService.duration,
+        service_name: selectedService.serviceName,
+        id_store: store.id,
+        employee: newReservationSlot.employee,
+        profession: selectedService.profession,
+      };
+
+      const { error } = await supabase
+        .from('reservations')
+        .insert(reservation);
+
+      if (error) throw error;
+
+      // Refresh reservations
+      await fetchDayReservations();
+      await fetchAllData();
+
+      setShowNewReservationModal(false);
+      setNewReservationSlot(null);
+      setNewReservationForm({
+        name: '',
+        email: '',
+        phone: '',
+        service: '',
+        note: '',
+      });
+    } catch (error) {
+      console.error('Error creating reservation:', error);
+      alert('Failed to create reservation');
     }
   };
 
@@ -298,11 +374,45 @@ export default function DashboardPage({ params }: { params: { storeName: string 
   if (!store) return <div>Store not found</div>;
 
   const tabs = [
-    { id: 'overview', label: 'Overview' },
+    { id: 'overview', label: 'Schedule' },
     { id: 'reservations', label: 'Reservations' },
     { id: 'services', label: 'Services' },
     { id: 'settings', label: 'Settings' },
   ];
+
+  // Generate time slots for the day
+  const generateTimeSlots = () => {
+    const dayName = selectedDate.toFormat('EEEE');
+    const workDay = store.workDays?.find(wd => wd.day === dayName);
+
+    if (!workDay || !workDay.enabled) return [];
+
+    const [startHour, startMin] = workDay.startTime.split(':').map(Number);
+    const [endHour, endMin] = workDay.endTime.split(':').map(Number);
+
+    const slots: DateTime[] = [];
+    let current = selectedDate.set({ hour: startHour, minute: startMin });
+    const end = selectedDate.set({ hour: endHour, minute: endMin });
+
+    while (current < end) {
+      slots.push(current);
+      current = current.plus({ minutes: 15 });
+    }
+
+    return slots;
+  };
+
+  const timeSlots = generateTimeSlots();
+
+  // Check if a time slot has a reservation for an employee
+  const getReservationAtSlot = (employeeEmail: string, slotTime: DateTime) => {
+    return dayReservations.find(r => {
+      if (r.employee !== employeeEmail) return false;
+      const resStart = DateTime.fromISO(r.date_time);
+      const resEnd = resStart.plus({ minutes: r.service_duration || r.serviceDuration || 0 });
+      return slotTime >= resStart && slotTime < resEnd;
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -332,135 +442,129 @@ export default function DashboardPage({ params }: { params: { storeName: string 
         </div>
       </div>
 
-      {/* Overview Tab */}
+      {/* Schedule Tab */}
       {activeTab === 'overview' && (
-        <div className="space-y-8">
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm text-text-secondary">Today's Reservations</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold text-primary">{todayReservations.length}</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm text-text-secondary">Total Reservations</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold text-primary">{totalReservations}</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm text-text-secondary">Active Services</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold text-primary">{services.length}</p>
-              </CardContent>
-            </Card>
+        <div className="space-y-4">
+          {/* Date Picker */}
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              onClick={() => setSelectedDate(selectedDate.minus({ days: 1 }))}
+            >
+              ← Previous Day
+            </Button>
+            <Input
+              type="date"
+              value={selectedDate.toFormat('yyyy-MM-dd')}
+              onChange={(e) => setSelectedDate(DateTime.fromISO(e.target.value).setZone('Europe/Athens'))}
+              className="w-auto"
+            />
+            <Button
+              variant="outline"
+              onClick={() => setSelectedDate(selectedDate.plus({ days: 1 }))}
+            >
+              Next Day →
+            </Button>
+            <Button
+              onClick={() => setSelectedDate(DateTime.now().setZone('Europe/Athens'))}
+            >
+              Today
+            </Button>
+            <p className="text-text font-medium">{selectedDate.toFormat('EEEE, MMMM d, yyyy')}</p>
           </div>
 
-          {/* Today's Reservations by Employee */}
-          <div>
-            <h2 className="text-2xl font-bold text-text mb-4">Today's Schedule</h2>
-            {employees.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {employees.map((employee) => {
-                  const employeeReservations = todayReservations.filter(
-                    (r) => r.employee === employee.email
-                  );
+          {/* Schedule Grid */}
+          {timeSlots.length > 0 && employees.length > 0 ? (
+            <div className="overflow-x-auto">
+              <div className="inline-block min-w-full">
+                <div className="grid gap-0 border border-border rounded-lg overflow-hidden" style={{ gridTemplateColumns: `80px repeat(${employees.length}, minmax(150px, 1fr))` }}>
+                  {/* Header Row */}
+                  <div className="bg-surface-secondary border-b border-r border-border p-2 font-semibold text-sm sticky top-0 z-10">
+                    Time
+                  </div>
+                  {employees.map((employee) => (
+                    <div
+                      key={employee.id}
+                      className="bg-surface-secondary border-b border-r border-border last:border-r-0 p-2 sticky top-0 z-10"
+                    >
+                      <p className="font-semibold text-sm text-primary truncate">
+                        {employee.email.split('@')[0]}
+                      </p>
+                      <p className="text-xs text-text-secondary truncate">{employee.category}</p>
+                    </div>
+                  ))}
 
-                  return (
-                    <Card key={employee.id} className="flex flex-col">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base font-semibold text-primary">
-                          {employee.email.split('@')[0]}
-                        </CardTitle>
-                        <p className="text-xs text-text-secondary">{employee.category}</p>
-                      </CardHeader>
-                      <CardContent className="flex-1 space-y-2">
-                        {employeeReservations.length > 0 ? (
-                          employeeReservations.map((reservation) => (
+                  {/* Time Slots */}
+                  {timeSlots.map((slot) => {
+                    const isHour = slot.minute === 0;
+                    return (
+                      <>
+                        {/* Time Label */}
+                        <div
+                          key={`time-${slot.toISO()}`}
+                          className={`border-r border-border p-2 text-xs ${
+                            isHour ? 'font-semibold border-t border-t-border' : 'border-t border-t-border/30'
+                          }`}
+                        >
+                          {slot.toFormat('HH:mm')}
+                        </div>
+
+                        {/* Employee Slots */}
+                        {employees.map((employee) => {
+                          const reservation = getReservationAtSlot(employee.email, slot);
+                          const isStartOfReservation = reservation && DateTime.fromISO(reservation.date_time).equals(slot);
+
+                          return (
                             <div
-                              key={reservation.id}
-                              className="p-3 bg-surface-secondary rounded-lg border border-border"
+                              key={`slot-${employee.id}-${slot.toISO()}`}
+                              className={`border-r last:border-r-0 border-border p-1 min-h-[40px] ${
+                                isHour ? 'border-t border-t-border' : 'border-t border-t-border/30'
+                              }`}
                             >
-                              <p className="font-medium text-sm text-text">{reservation.name}</p>
-                              <p className="text-xs text-text-secondary mt-1">
-                                {new Date(reservation.date_time).toLocaleTimeString('el-GR', {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </p>
-                              <p className="text-xs text-text-secondary">
-                                {reservation.service_name || reservation.serviceName}
-                              </p>
-                              <p className="text-xs text-primary mt-1">
-                                {reservation.service_duration || reservation.serviceDuration} min
-                              </p>
+                              {reservation ? (
+                                isStartOfReservation ? (
+                                  <div className="bg-primary/10 border border-primary rounded p-2 text-xs h-full">
+                                    <p className="font-medium text-text truncate">{reservation.name}</p>
+                                    <p className="text-text-secondary truncate">
+                                      {reservation.service_name || reservation.serviceName}
+                                    </p>
+                                    <p className="text-primary">
+                                      {reservation.service_duration || reservation.serviceDuration} min
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="bg-primary/5 h-full"></div>
+                                )
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setNewReservationSlot({ employee: employee.email, time: slot });
+                                    setShowNewReservationModal(true);
+                                  }}
+                                  className="w-full h-full flex items-center justify-center text-text-secondary hover:text-primary hover:bg-surface-secondary rounded transition-colors"
+                                  title="Add reservation"
+                                >
+                                  <span className="text-xl">+</span>
+                                </button>
+                              )}
                             </div>
-                          ))
-                        ) : (
-                          <p className="text-sm text-text-secondary italic py-4 text-center">
-                            No reservations
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-
-                {/* Unassigned reservations column */}
-                {todayReservations.filter((r) => !r.employee || !employees.find(e => e.email === r.employee)).length > 0 && (
-                  <Card className="flex flex-col">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base font-semibold text-text-secondary">
-                        Unassigned
-                      </CardTitle>
-                      <p className="text-xs text-text-secondary">No employee assigned</p>
-                    </CardHeader>
-                    <CardContent className="flex-1 space-y-2">
-                      {todayReservations
-                        .filter((r) => !r.employee || !employees.find(e => e.email === r.employee))
-                        .map((reservation) => (
-                          <div
-                            key={reservation.id}
-                            className="p-3 bg-surface-secondary rounded-lg border border-border"
-                          >
-                            <p className="font-medium text-sm text-text">{reservation.name}</p>
-                            <p className="text-xs text-text-secondary mt-1">
-                              {new Date(reservation.date_time).toLocaleTimeString('el-GR', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </p>
-                            <p className="text-xs text-text-secondary">
-                              {reservation.service_name || reservation.serviceName}
-                            </p>
-                            <p className="text-xs text-primary mt-1">
-                              {reservation.service_duration || reservation.serviceDuration} min
-                            </p>
-                          </div>
-                        ))}
-                    </CardContent>
-                  </Card>
-                )}
+                          );
+                        })}
+                      </>
+                    );
+                  })}
+                </div>
               </div>
-            ) : (
-              <Card>
-                <CardContent className="py-8 text-center text-text-secondary">
-                  {todayReservations.length > 0
-                    ? 'No employees found. Please add employees to see schedule.'
-                    : 'No reservations for today'}
-                </CardContent>
-              </Card>
-            )}
-          </div>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-center text-text-secondary">
+                {employees.length === 0
+                  ? 'No employees found. Please add employees to manage schedule.'
+                  : 'Store is closed on this day.'}
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
@@ -783,6 +887,113 @@ export default function DashboardPage({ params }: { params: { storeName: string 
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* New Reservation Modal */}
+      <Modal
+        isOpen={showNewReservationModal}
+        onClose={() => {
+          setShowNewReservationModal(false);
+          setNewReservationSlot(null);
+          setNewReservationForm({
+            name: '',
+            email: '',
+            phone: '',
+            service: '',
+            note: '',
+          });
+        }}
+        title="New Reservation"
+        size="lg"
+      >
+        {newReservationSlot && (
+          <form onSubmit={handleCreateReservation} className="space-y-4">
+            <div className="bg-surface-secondary p-3 rounded-lg">
+              <p className="text-sm text-text-secondary">Time:</p>
+              <p className="font-semibold text-text">
+                {newReservationSlot.time.toFormat('EEEE, MMMM d, yyyy · HH:mm')}
+              </p>
+              <p className="text-sm text-text-secondary mt-1">Employee:</p>
+              <p className="font-semibold text-text">
+                {newReservationSlot.employee.split('@')[0]}
+              </p>
+            </div>
+
+            <Input
+              label="Client Name"
+              placeholder="John Doe"
+              value={newReservationForm.name}
+              onChange={(e) => setNewReservationForm({ ...newReservationForm, name: e.target.value })}
+              required
+            />
+
+            <Input
+              type="email"
+              label="Email"
+              placeholder="john@example.com"
+              value={newReservationForm.email}
+              onChange={(e) => setNewReservationForm({ ...newReservationForm, email: e.target.value })}
+              required
+            />
+
+            <Input
+              type="tel"
+              label="Phone"
+              placeholder="+30 123 456 7890"
+              value={newReservationForm.phone}
+              onChange={(e) => setNewReservationForm({ ...newReservationForm, phone: e.target.value })}
+              required
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-text mb-1">Service</label>
+              <select
+                value={newReservationForm.service}
+                onChange={(e) => setNewReservationForm({ ...newReservationForm, service: e.target.value })}
+                className="w-full px-3 py-2 bg-surface border border-border rounded-lg text-text focus:outline-none focus:ring-2 focus:ring-primary"
+                required
+              >
+                <option value="">Select a service</option>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.serviceName} - {service.duration} min - €{service.price}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <Textarea
+              label="Notes (Optional)"
+              placeholder="Any special requests..."
+              value={newReservationForm.note}
+              onChange={(e) => setNewReservationForm({ ...newReservationForm, note: e.target.value })}
+              rows={3}
+            />
+
+            <div className="flex gap-2 justify-end pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowNewReservationModal(false);
+                  setNewReservationSlot(null);
+                  setNewReservationForm({
+                    name: '',
+                    email: '',
+                    phone: '',
+                    service: '',
+                    note: '',
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                Create Reservation
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );
