@@ -534,31 +534,30 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                             return (
                               <div
                                 key={`slot-${employee.id}-${slot.toISO()}`}
-                                className={`border-r last:border-r-0 border-border p-1 min-h-[40px] ${
+                                className={`border-r last:border-r-0 border-border p-1 ${
                                   isHour ? 'border-t border-t-border' : 'border-t border-t-border/30'
-                                }`}
+                                } ${reservation ? 'bg-primary/5' : ''}`}
+                                style={{ minHeight: '40px' }}
                               >
                                 {reservation ? (
                                   isStartOfReservation ? (
-                                    <div className="bg-primary/10 border border-primary rounded p-2 text-xs h-full">
-                                      <p className="font-medium text-text truncate">{reservation.name}</p>
-                                      <p className="text-text-secondary truncate">
+                                    <div className="bg-primary text-white rounded p-2 text-xs relative z-10" style={{ minHeight: '60px' }}>
+                                      <p className="font-semibold truncate">{reservation.name}</p>
+                                      <p className="text-white/90 truncate text-[10px] mt-0.5">
                                         {reservation.service_name || reservation.serviceName}
                                       </p>
-                                      <p className="text-primary">
+                                      <p className="text-white/80 text-[10px] mt-0.5">
                                         {reservation.service_duration || reservation.serviceDuration} min
                                       </p>
                                     </div>
-                                  ) : (
-                                    <div className="bg-primary/5 h-full"></div>
-                                  )
+                                  ) : null
                                 ) : (
                                   <button
                                     onClick={() => {
                                       setNewReservationSlot({ employee: employee.email, time: slot });
                                       setShowNewReservationModal(true);
                                     }}
-                                    className="w-full h-full flex items-center justify-center text-text-secondary hover:text-primary hover:bg-surface-secondary rounded transition-colors"
+                                    className="w-full h-full min-h-[38px] flex items-center justify-center text-text-secondary hover:text-primary hover:bg-surface-secondary rounded transition-colors"
                                     title="Add reservation"
                                   >
                                     <span className="text-xl">+</span>
