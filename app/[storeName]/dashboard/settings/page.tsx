@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -10,6 +11,7 @@ import { useThemeStore } from '@/store/useThemeStore';
 import type { Store } from '@/types';
 
 export default function SettingsPage() {
+  const params = useParams();
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -33,18 +35,19 @@ export default function SettingsPage() {
 
   const fetchStore = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // TODO: Re-enable authentication for production
+      // const { data: { user } } = await supabase.auth.getUser();
+      // const { data: userData } = await supabase
+      //   .from('users')
+      //   .select('id_store')
+      //   .eq('id', user?.id)
+      //   .single();
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id_store')
-        .eq('id', user?.id)
-        .single();
-
+      // Get store by name
       const { data: storeData, error } = await supabase
         .from('stores')
         .select('*')
-        .eq('id', userData?.id_store)
+        .eq('store_name', params.storeName)
         .single();
 
       if (error) throw error;

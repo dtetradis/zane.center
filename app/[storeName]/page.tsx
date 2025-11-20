@@ -19,7 +19,14 @@ export default async function StorePage({ params }: { params: { storeName: strin
     .eq('id_store', store?.id)
     .order('index', { ascending: true });
 
-  console.log('Services fetch:', { services, servicesError, storeId: store?.id });
+  // Transform snake_case to camelCase for services
+  const transformedServices = services?.map((service: any) => ({
+    ...service,
+    serviceName: service.service_name || service.serviceName,
+    id_store: service.id_store,
+  }));
+
+  console.log('Services fetch:', { services: transformedServices, servicesError, storeId: store?.id });
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -67,8 +74,8 @@ export default async function StorePage({ params }: { params: { storeName: strin
       {/* Services */}
       <div className="mb-8">
         <h2 className="text-3xl font-bold text-text mb-6">Our Services</h2>
-        {services && services.length > 0 ? (
-          <StoreServicesClient services={services} storeId={store?.id || ''} />
+        {transformedServices && transformedServices.length > 0 ? (
+          <StoreServicesClient services={transformedServices} storeId={store?.id || ''} />
         ) : (
           <div className="text-center py-12 text-text-secondary">
             No services available at the moment

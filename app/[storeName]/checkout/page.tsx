@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/useCartStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -8,12 +8,49 @@ import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { createClient } from '@/lib/supabase/client';
 import { toGreekISO } from '@/lib/supabase/utils';
+import { getAvailableEmployee } from '@/lib/reservationUtils';
+import { DateTime } from 'luxon';
 
 export default function CheckoutPage({ params }: { params: { storeName: string } }) {
   const router = useRouter();
   const { items, storeId, getTotalPrice, clearCart } = useCartStore();
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [existingReservations, setExistingReservations] = useState<any[]>([]);
   const supabase = createClient();
+
+  // Handle client-side mounting and fetch data
+  useEffect(() => {
+    setMounted(true);
+    fetchStoreData();
+  }, []);
+
+  const fetchStoreData = async () => {
+    if (!storeId) return;
+
+    // Fetch employees for this store
+    const { data: storeEmployees } = await supabase
+      .from('users')
+      .select('id, email, category, role')
+      .eq('id_store', storeId)
+      .in('role', ['employee', 'admin', 'owner']);
+
+    if (storeEmployees) {
+      setEmployees(storeEmployees);
+    }
+
+    // Fetch existing reservations for conflict checking
+    const { data: reservations } = await supabase
+      .from('reservations')
+      .select('date_time, service_duration, employee, profession')
+      .eq('id_store', storeId)
+      .gte('date_time', DateTime.now().toISO());
+
+    if (reservations) {
+      setExistingReservations(reservations);
+    }
+  };
 
   const [formData, setFormData] = useState({
     name: '',
@@ -62,26 +99,48 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
     setLoading(true);
 
     try {
-      // Create reservations for each item
-      const reservations = items.map((item) => ({
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        note: formData.note,
-        date_time: toGreekISO(new Date(item.dateTime!)),
-        service_duration: item.service.duration,
-        service_name: item.service.serviceName,
-        id_store: storeId,
-        employee: item.employee || null,
-        profession: item.service.profession,
-      }));
+      // Create reservations for each item with assigned employees
+      const reservations: any[] = [];
+      const tempReservations = [...existingReservations];
+
+      for (const item of items) {
+        const startTime = DateTime.fromISO(item.dateTime!);
+
+        // Find an available employee for this service
+        const assignedEmployee = getAvailableEmployee(
+          item.service.profession,
+          startTime,
+          item.service.duration,
+          employees,
+          tempReservations // Include existing + previously assigned in this batch
+        );
+
+        const reservation = {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          note: formData.note,
+          date_time: toGreekISO(new Date(item.dateTime!)),
+          service_duration: item.service.duration,
+          service_name: (item.service as any).service_name || item.service.serviceName,
+          id_store: storeId,
+          employee: assignedEmployee || item.employee || null,
+          profession: item.service.profession,
+        };
+
+        reservations.push(reservation);
+        // Add to temp list so next service knows this employee is busy
+        tempReservations.push(reservation);
+      }
 
       const { data, error } = await supabase
         .from('reservations')
         .insert(reservations)
         .select();
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       // Clear cart
       clearCart();
@@ -89,16 +148,26 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
       // Redirect to confirmation page
       router.push(`/${params.storeName}/reservation/${data[0].id}`);
     } catch (error: any) {
-      console.error('Error creating reservation:', error);
       alert('Failed to create reservation. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (items.length === 0) {
-    router.push(`/${params.storeName}/reservation`);
+  // Handle redirect when cart is empty
+  useEffect(() => {
+    if (mounted && items.length === 0) {
+      router.push(`/${params.storeName}/reservation`);
+    }
+  }, [mounted, items.length, router, params.storeName]);
+
+  // Don't render until mounted to avoid SSR issues
+  if (!mounted) {
     return null;
+  }
+
+  if (items.length === 0) {
+    return null; // Will redirect via useEffect
   }
 
   return (

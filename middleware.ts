@@ -54,26 +54,27 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // TODO: Re-enable authentication for production
   // Check if the user is accessing dashboard routes
-  const path = request.nextUrl.pathname
-  const isDashboardRoute = path.includes('/dashboard')
-  const isAuthRoute = path.includes('/dashboard/login') || path.includes('/dashboard/signup')
+  // const path = request.nextUrl.pathname
+  // const isDashboardRoute = path.includes('/dashboard')
+  // const isAuthRoute = path.includes('/dashboard/login') || path.includes('/dashboard/signup')
 
-  // Skip auth check for public routes and auth pages
-  if (!isDashboardRoute || isAuthRoute) {
-    return response
-  }
+  // // Skip auth check for public routes and auth pages
+  // if (!isDashboardRoute || isAuthRoute) {
+  //   return response
+  // }
 
-  // Only check auth for protected dashboard routes
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // // Only check auth for protected dashboard routes
+  // const {
+  //   data: { user },
+  // } = await supabase.auth.getUser()
 
-  // Redirect to login if accessing dashboard without authentication
-  if (!user) {
-    const storeName = path.split('/')[1]
-    return NextResponse.redirect(new URL(`/${storeName}/dashboard/login`, request.url))
-  }
+  // // Redirect to login if accessing dashboard without authentication
+  // if (!user) {
+  //   const storeName = path.split('/')[1]
+  //   return NextResponse.redirect(new URL(`/${storeName}/dashboard/login`, request.url))
+  // }
 
   return response
 }

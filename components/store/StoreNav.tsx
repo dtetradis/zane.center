@@ -21,9 +21,11 @@ export default function StoreNav({ store }: { store: Store }) {
     }
   }, [store.themeColors, setColors]);
 
+  const storeName = store.store_name || store.storeName;
+
   const navItems = [
-    { href: `/${store.storeName}`, label: 'Services' },
-    { href: `/${store.storeName}/reservation`, label: 'Book Appointment' },
+    { href: `/${storeName}`, label: 'Services' },
+    { href: `/${storeName}/reservation`, label: 'Book Appointment' },
   ];
 
   return (
@@ -31,8 +33,8 @@ export default function StoreNav({ store }: { store: Store }) {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center space-x-8">
-            <Link href={`/${store.storeName}`} className="text-2xl font-bold text-primary">
-              {store.title || store.storeName}
+            <Link href={`/${storeName}`} className="text-2xl font-bold text-primary">
+              {store.title || storeName}
             </Link>
             <div className="hidden md:flex space-x-4">
               {navItems.map((item) => (
@@ -53,7 +55,7 @@ export default function StoreNav({ store }: { store: Store }) {
           <div className="flex items-center gap-4">
             <ThemeToggle />
             <Link
-              href={`/${store.storeName}/checkout`}
+              href={`/${storeName}/reservation`}
               className="relative p-2 rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

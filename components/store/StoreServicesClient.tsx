@@ -12,7 +12,7 @@ export default function StoreServicesClient({
   services: Service[];
   storeId: string;
 }) {
-  const { items, addItem, setStore } = useCartStore();
+  const { items, addItem, removeItem, setStore } = useCartStore();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,7 +28,16 @@ export default function StoreServicesClient({
     : services;
 
   const handleAddToCart = (service: Service) => {
-    addItem(service);
+    // Check if item is already in cart
+    const isInCart = items.some((item) => item.service.id === service.id);
+
+    if (isInCart) {
+      // Remove from cart
+      removeItem(service.id);
+    } else {
+      // Add to cart
+      addItem(service);
+    }
   };
 
   return (

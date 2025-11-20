@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { ServiceCard } from '@/components/ServiceCard';
 import { Loading } from '@/components/ui/Loading';
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import type { Service } from '@/types';
 
 export default function ServicesPage() {
+  const params = useParams();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -32,20 +34,27 @@ export default function ServicesPage() {
 
   const fetchServices = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // TODO: Re-enable authentication for production
+      // const { data: { user } } = await supabase.auth.getUser();
+      // const { data: userData } = await supabase
+      //   .from('users')
+      //   .select('id_store')
+      //   .eq('id', user?.id)
+      //   .single();
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id_store')
-        .eq('id', user?.id)
+      // Get store by name
+      const { data: store } = await supabase
+        .from('stores')
+        .select('id')
+        .eq('store_name', params.storeName)
         .single();
 
-      setStoreId(userData?.id_store || '');
+      setStoreId(store?.id || '');
 
       const { data, error } = await supabase
         .from('services')
         .select('*')
-        .eq('id_store', userData?.id_store)
+        .eq('id_store', store?.id)
         .order('index', { ascending: true });
 
       if (error) throw error;

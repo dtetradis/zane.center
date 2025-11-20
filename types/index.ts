@@ -42,6 +42,7 @@ export interface Store {
   reviews?: number;
   photos?: string[];
   storeName: string;
+  store_name?: string; // Database field name
   title: string;
   workDays: WorkDay[];
   categories: string[];
