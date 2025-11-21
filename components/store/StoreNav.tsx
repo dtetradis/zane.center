@@ -5,14 +5,15 @@ import { usePathname } from 'next/navigation';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useCartStore } from '@/store/useCartStore';
 import type { Store } from '@/types';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useThemeStore } from '@/store/useThemeStore';
 
 export default function StoreNav({ store }: { store: Store }) {
   const pathname = usePathname();
   const { getItemCount } = useCartStore();
   const { setColors } = useThemeStore();
-  const itemCount = getItemCount();
+  const [itemCount, setItemCount] = useState(0);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     // Apply store's custom colors
@@ -20,6 +21,11 @@ export default function StoreNav({ store }: { store: Store }) {
       setColors(store.themeColors);
     }
   }, [store.themeColors, setColors]);
+
+  useEffect(() => {
+    setMounted(true);
+    setItemCount(getItemCount());
+  }, [getItemCount]);
 
   const storeName = store.store_name || store.storeName;
 
@@ -61,7 +67,7 @@ export default function StoreNav({ store }: { store: Store }) {
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
               </svg>
-              {itemCount > 0 && (
+              {mounted && itemCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-accent text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
                   {itemCount}
                 </span>

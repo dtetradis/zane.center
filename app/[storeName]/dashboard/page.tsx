@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { ReservationCard } from '@/components/ReservationCard';
@@ -13,6 +13,7 @@ import { useThemeStore } from '@/store/useThemeStore';
 import { getGreekDateTime, toGreekISO } from '@/lib/supabase/utils';
 import { DateTime } from 'luxon';
 import type { Service, Store, Reservation } from '@/types';
+import { deleteReservation } from '@/app/actions/reservations';
 
 type Tab = 'overview' | 'reservations' | 'services' | 'settings';
 
@@ -163,8 +164,9 @@ export default function DashboardPage({ params }: { params: { storeName: string 
     if (!store) return;
 
     try {
-      const dayStart = selectedDate.startOf('day').toISO();
-      const dayEnd = selectedDate.plus({ days: 1 }).startOf('day').toISO();
+      // Convert Athens time to UTC for database query
+      const dayStart = selectedDate.startOf('day').toUTC().toISO();
+      const dayEnd = selectedDate.plus({ days: 1 }).startOf('day').toUTC().toISO();
 
       const { data } = await supabase
         .from('reservations')
@@ -197,6 +199,29 @@ export default function DashboardPage({ params }: { params: { storeName: string 
       setSelectedReservation(null);
     } catch (error) {
       console.error('Error canceling reservation:', error);
+    }
+  };
+
+  const [deleteConfirmReservation, setDeleteConfirmReservation] = useState<Reservation | null>(null);
+
+  const handleDeleteReservation = async () => {
+    if (!deleteConfirmReservation) return;
+
+    try {
+      const result = await deleteReservation(deleteConfirmReservation.id);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete reservation');
+      }
+
+      // Refresh the data
+      await fetchDayReservations();
+      await fetchAllData();
+
+      setDeleteConfirmReservation(null);
+    } catch (error) {
+      console.error('Error deleting reservation:', error);
+      alert('Failed to delete reservation');
     }
   };
 
@@ -408,14 +433,17 @@ export default function DashboardPage({ params }: { params: { storeName: string 
 
   const { slots: timeSlots, isOpen } = generateTimeSlots();
 
+
   // Check if a time slot has a reservation for an employee
   const getReservationAtSlot = (employeeEmail: string, slotTime: DateTime) => {
-    return dayReservations.find(r => {
+    const found = dayReservations.find(r => {
       if (r.employee !== employeeEmail) return false;
-      const resStart = DateTime.fromISO(r.date_time);
+      const resStart = DateTime.fromISO(r.date_time).setZone('Europe/Athens');
       const resEnd = resStart.plus({ minutes: r.service_duration || r.serviceDuration || 0 });
       return slotTime >= resStart && slotTime < resEnd;
     });
+
+    return found;
   };
 
   return (
@@ -515,10 +543,9 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                     timeSlots.map((slot) => {
                       const isHour = slot.minute === 0;
                       return (
-                        <>
+                        <React.Fragment key={`row-${slot.toISO()}`}>
                           {/* Time Label */}
                           <div
-                            key={`time-${slot.toISO()}`}
                             className={`border-r border-border p-2 text-xs ${
                               isHour ? 'font-semibold border-t border-t-border' : 'border-t border-t-border/30'
                             }`}
@@ -529,20 +556,46 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                           {/* Employee Slots */}
                           {employees.map((employee) => {
                             const reservation = getReservationAtSlot(employee.email, slot);
-                            const isStartOfReservation = reservation && DateTime.fromISO(reservation.date_time).equals(slot);
+
+                            // Check if this slot is the start of a reservation (compare hour and minute only)
+                            const isStartOfReservation = reservation && (() => {
+                              const resStart = DateTime.fromISO(reservation.date_time).setZone('Europe/Athens');
+                              return slot.hour === resStart.hour && slot.minute === resStart.minute;
+                            })();
+
+                            // Calculate height based on reservation duration
+                            const slotHeight = 48; // pixels per 15-minute slot (40px + 8px padding)
+                            const slotDuration = 15; // minutes
+                            const numSlots = reservation
+                              ? Math.ceil((reservation.service_duration || reservation.serviceDuration || 0) / slotDuration)
+                              : 1;
+                            const reservationHeight = numSlots * slotHeight;
 
                             return (
                               <div
                                 key={`slot-${employee.id}-${slot.toISO()}`}
                                 className={`border-r last:border-r-0 border-border p-1 ${
                                   isHour ? 'border-t border-t-border' : 'border-t border-t-border/30'
-                                } ${reservation ? 'bg-primary/5' : ''}`}
-                                style={{ minHeight: '40px' }}
+                                } ${reservation ? 'bg-primary/5' : ''} relative`}
+                                style={{ height: '48px' }}
                               >
                                 {reservation ? (
                                   isStartOfReservation ? (
-                                    <div className="bg-primary text-white rounded p-2 text-xs relative z-10" style={{ minHeight: '60px' }}>
-                                      <p className="font-semibold truncate">{reservation.name}</p>
+                                    <div
+                                      className="bg-primary text-white rounded p-2 text-xs absolute top-0 left-0 right-0 z-10 shadow-md flex flex-col"
+                                      style={{ height: `${reservationHeight}px` }}
+                                    >
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setDeleteConfirmReservation(reservation);
+                                        }}
+                                        className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded bg-white/20 hover:bg-white/30 transition-colors"
+                                        title="Delete reservation"
+                                      >
+                                        <span className="text-white font-bold text-sm">×</span>
+                                      </button>
+                                      <p className="font-semibold truncate pr-6">{reservation.name}</p>
                                       <p className="text-white/90 truncate text-[10px] mt-0.5">
                                         {reservation.service_name || reservation.serviceName}
                                       </p>
@@ -566,7 +619,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                               </div>
                             );
                           })}
-                        </>
+                        </React.Fragment>
                       );
                     })
                   ) : (
@@ -825,6 +878,43 @@ export default function DashboardPage({ params }: { params: { storeName: string 
           Are you sure you want to cancel the reservation for{' '}
           <strong>{selectedReservation?.name}</strong>?
         </p>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!deleteConfirmReservation}
+        onClose={() => setDeleteConfirmReservation(null)}
+        title="Delete Reservation"
+        footer={
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setDeleteConfirmReservation(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleDeleteReservation}>
+              Delete
+            </Button>
+          </div>
+        }
+      >
+        <div className="text-text">
+          <p className="mb-2">
+            Are you sure you want to delete this reservation?
+          </p>
+          {deleteConfirmReservation && (
+            <div className="bg-surface-secondary p-3 rounded-md mt-3">
+              <p className="font-semibold">{deleteConfirmReservation.name}</p>
+              <p className="text-sm text-text-secondary mt-1">
+                {deleteConfirmReservation.service_name || deleteConfirmReservation.serviceName}
+              </p>
+              <p className="text-sm text-text-secondary">
+                {DateTime.fromISO(deleteConfirmReservation.date_time).setZone('Europe/Athens').toFormat('MMM d, yyyy - HH:mm')}
+              </p>
+            </div>
+          )}
+          <p className="text-sm text-text-secondary mt-3">
+            This action cannot be undone.
+          </p>
+        </div>
       </Modal>
 
       {/* Service Modal */}
