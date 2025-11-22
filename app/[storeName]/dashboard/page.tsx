@@ -208,21 +208,6 @@ export default function DashboardPage({ params }: { params: { storeName: string 
           .in('role', ['employee', 'admin', 'owner']);
 
         setEmployees(employeesData || []);
-
-        // Fetch day reservations for today (use fresh DateTime to avoid closure issues)
-        const today = DateTime.now().setZone('Europe/Athens');
-        const dayStart = today.startOf('day').toUTC().toISO();
-        const dayEnd = today.plus({ days: 1 }).startOf('day').toUTC().toISO();
-
-        const { data: dayData } = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('id_store', storeData.id)
-          .gte('date_time', dayStart)
-          .lt('date_time', dayEnd)
-          .order('date_time', { ascending: true });
-
-        setDayReservations(dayData || []);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -323,15 +308,20 @@ export default function DashboardPage({ params }: { params: { storeName: string 
         profession: selectedService.profession,
       };
 
-      const { error } = await supabase
+      const { data: newReservation, error } = await supabase
         .from('reservations')
-        .insert(reservation);
+        .insert(reservation)
+        .select()
+        .single();
 
       if (error) throw error;
 
-      // Refresh reservations - pass current values explicitly
-      await fetchDayReservations(selectedDate, store.id);
-      await fetchAllData();
+      // Add the new reservation to state
+      if (newReservation) {
+        setDayReservations(prev => [...prev, newReservation]);
+        setAllReservations(prev => [...prev, newReservation]);
+        setFilteredReservations(prev => [...prev, newReservation]);
+      }
 
       setShowNewReservationModal(false);
       setNewReservationSlot(null);
@@ -396,9 +386,11 @@ export default function DashboardPage({ params }: { params: { storeName: string 
         throw new Error(result.error || 'Failed to update reservation');
       }
 
-      // Refresh reservations - pass current values explicitly
-      await fetchDayReservations(selectedDate, store.id);
-      await fetchAllData();
+      // Update reservation in state
+      const updatedReservation = { ...editingReservation, ...updates };
+      setDayReservations(prev => prev.map(r => r.id === editingReservation.id ? updatedReservation : r));
+      setAllReservations(prev => prev.map(r => r.id === editingReservation.id ? updatedReservation : r));
+      setFilteredReservations(prev => prev.map(r => r.id === editingReservation.id ? updatedReservation : r));
 
       setEditingReservation(null);
       setEditReservationForm({
