@@ -894,7 +894,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {services.map((service) => (
                 <div key={service.id} className="relative group">
-                  <ServiceCard service={service} onAddToCart={() => {}} />
+                  <ServiceCard service={service} hideAddButton />
                   <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => openEditServiceModal(service)}>
                       Edit

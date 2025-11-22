@@ -6,11 +6,12 @@ import type { Service } from '@/types';
 
 interface ServiceCardProps {
   service: Service;
-  onAddToCart: (service: Service) => void;
+  onAddToCart?: (service: Service) => void;
   isInCart?: boolean;
+  hideAddButton?: boolean;
 }
 
-export function ServiceCard({ service, onAddToCart, isInCart = false }: ServiceCardProps) {
+export function ServiceCard({ service, onAddToCart, isInCart = false, hideAddButton = false }: ServiceCardProps) {
   return (
     <div className="bg-surface rounded-lg border border-border p-4 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-4">
@@ -34,24 +35,26 @@ export function ServiceCard({ service, onAddToCart, isInCart = false }: ServiceC
         </div>
 
         {/* Add/Remove Button */}
-        <div className="flex-shrink-0">
-          <Button
-            onClick={() => onAddToCart(service)}
-            variant={isInCart ? 'secondary' : 'primary'}
-            size="sm"
-            title={isInCart ? 'Remove from cart' : 'Add to cart'}
-          >
-            {isInCart ? (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            )}
-          </Button>
-        </div>
+        {!hideAddButton && onAddToCart && (
+          <div className="flex-shrink-0">
+            <Button
+              onClick={() => onAddToCart(service)}
+              variant={isInCart ? 'secondary' : 'primary'}
+              size="sm"
+              title={isInCart ? 'Remove from cart' : 'Add to cart'}
+            >
+              {isInCart ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              )}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
