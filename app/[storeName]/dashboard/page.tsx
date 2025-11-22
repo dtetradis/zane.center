@@ -13,9 +13,39 @@ import { useThemeStore } from '@/store/useThemeStore';
 import { getGreekDateTime, toGreekISO } from '@/lib/supabase/utils';
 import { DateTime } from 'luxon';
 import type { Service, Store, Reservation } from '@/types';
-import { deleteReservation } from '@/app/actions/reservations';
+import { deleteReservation, updateReservation } from '@/app/actions/reservations';
 
 type Tab = 'overview' | 'reservations' | 'services' | 'settings';
+
+// Generate a consistent color based on a string (name)
+const stringToColor = (str: string): { bg: string; hover: string } => {
+  // Predefined color palette with good contrast for white text
+  const colors = [
+    { bg: '#3B82F6', hover: '#2563EB' }, // Blue
+    { bg: '#10B981', hover: '#059669' }, // Emerald
+    { bg: '#8B5CF6', hover: '#7C3AED' }, // Violet
+    { bg: '#F59E0B', hover: '#D97706' }, // Amber
+    { bg: '#EF4444', hover: '#DC2626' }, // Red
+    { bg: '#EC4899', hover: '#DB2777' }, // Pink
+    { bg: '#06B6D4', hover: '#0891B2' }, // Cyan
+    { bg: '#84CC16', hover: '#65A30D' }, // Lime
+    { bg: '#F97316', hover: '#EA580C' }, // Orange
+    { bg: '#6366F1', hover: '#4F46E5' }, // Indigo
+    { bg: '#14B8A6', hover: '#0D9488' }, // Teal
+    { bg: '#A855F7', hover: '#9333EA' }, // Purple
+  ];
+
+  // Create a hash from the string
+  let hash = 0;
+  const normalizedStr = str.toLowerCase().trim();
+  for (let i = 0; i < normalizedStr.length; i++) {
+    hash = normalizedStr.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  // Use the hash to pick a color from the palette
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
+};
 
 export default function DashboardPage({ params }: { params: { storeName: string } }) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -44,6 +74,17 @@ export default function DashboardPage({ params }: { params: { storeName: string 
     phone: '',
     service: '',
     note: '',
+  });
+
+  // Edit reservation modal
+  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null);
+  const [editReservationForm, setEditReservationForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    service: '',
+    note: '',
+    dateTime: '',
   });
 
   // Services state
@@ -76,11 +117,26 @@ export default function DashboardPage({ params }: { params: { storeName: string 
 
   useEffect(() => {
     fetchAllData();
+
+    // Handle hash navigation
+    const handleHashChange = () => {
+      const hash = window.location.hash.slice(1);
+      if (hash && ['overview', 'reservations', 'services', 'settings'].includes(hash)) {
+        setActiveTab(hash as Tab);
+      }
+    };
+
+    // Set initial tab from hash
+    handleHashChange();
+
+    // Listen for hash changes
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
   useEffect(() => {
     if (store) {
-      fetchDayReservations();
+      fetchDayReservations(selectedDate, store.id);
     }
   }, [selectedDate, store]);
 
@@ -152,6 +208,21 @@ export default function DashboardPage({ params }: { params: { storeName: string 
           .in('role', ['employee', 'admin', 'owner']);
 
         setEmployees(employeesData || []);
+
+        // Fetch day reservations for today (use fresh DateTime to avoid closure issues)
+        const today = DateTime.now().setZone('Europe/Athens');
+        const dayStart = today.startOf('day').toUTC().toISO();
+        const dayEnd = today.plus({ days: 1 }).startOf('day').toUTC().toISO();
+
+        const { data: dayData } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('id_store', storeData.id)
+          .gte('date_time', dayStart)
+          .lt('date_time', dayEnd)
+          .order('date_time', { ascending: true });
+
+        setDayReservations(dayData || []);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -160,18 +231,21 @@ export default function DashboardPage({ params }: { params: { storeName: string 
     }
   };
 
-  const fetchDayReservations = async () => {
-    if (!store) return;
+  const fetchDayReservations = async (date?: DateTime, storeId?: string) => {
+    const targetDate = date || selectedDate;
+    const targetStoreId = storeId || store?.id;
+
+    if (!targetStoreId) return;
 
     try {
       // Convert Athens time to UTC for database query
-      const dayStart = selectedDate.startOf('day').toUTC().toISO();
-      const dayEnd = selectedDate.plus({ days: 1 }).startOf('day').toUTC().toISO();
+      const dayStart = targetDate.startOf('day').toUTC().toISO();
+      const dayEnd = targetDate.plus({ days: 1 }).startOf('day').toUTC().toISO();
 
       const { data } = await supabase
         .from('reservations')
         .select('*')
-        .eq('id_store', store.id)
+        .eq('id_store', targetStoreId)
         .gte('date_time', dayStart)
         .lt('date_time', dayEnd)
         .order('date_time', { ascending: true });
@@ -268,6 +342,68 @@ export default function DashboardPage({ params }: { params: { storeName: string 
     } catch (error) {
       console.error('Error creating reservation:', error);
       alert('Failed to create reservation');
+    }
+  };
+
+  const openEditReservation = (reservation: Reservation) => {
+    setEditingReservation(reservation);
+
+    // Find the service ID from services list
+    const service = services.find(s =>
+      (s.service_name || s.serviceName) === (reservation.service_name || reservation.serviceName)
+    );
+
+    setEditReservationForm({
+      name: reservation.name,
+      email: reservation.email,
+      phone: reservation.phone,
+      service: service?.id || '',
+      note: reservation.note || '',
+      dateTime: DateTime.fromISO(reservation.date_time).setZone('Europe/Athens').toFormat("yyyy-MM-dd'T'HH:mm"),
+    });
+  };
+
+  const handleUpdateReservation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReservation || !store) return;
+
+    try {
+      const selectedService = services.find(s => s.id === editReservationForm.service);
+      if (!selectedService) return;
+
+      const updates = {
+        name: editReservationForm.name,
+        email: editReservationForm.email,
+        phone: editReservationForm.phone,
+        note: editReservationForm.note,
+        date_time: toGreekISO(new Date(editReservationForm.dateTime)),
+        service_duration: selectedService.duration,
+        service_name: (selectedService as any).service_name || selectedService.serviceName,
+        profession: selectedService.profession,
+      };
+
+      const result = await updateReservation(editingReservation.id, updates);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update reservation');
+      }
+
+      // Refresh reservations
+      await fetchDayReservations();
+      await fetchAllData();
+
+      setEditingReservation(null);
+      setEditReservationForm({
+        name: '',
+        email: '',
+        phone: '',
+        service: '',
+        note: '',
+        dateTime: '',
+      });
+    } catch (error) {
+      console.error('Error updating reservation:', error);
+      alert('Failed to update reservation');
     }
   };
 
@@ -401,14 +537,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
   if (loading) return <Loading fullScreen />;
   if (!store) return <div>Store not found</div>;
 
-  const tabs = [
-    { id: 'overview', label: 'Schedule' },
-    { id: 'reservations', label: 'Reservations' },
-    { id: 'services', label: 'Services' },
-    { id: 'settings', label: 'Settings' },
-  ];
-
-  // Generate time slots for the day
+  // Generate time slots for the day (supports two time ranges per day)
   const generateTimeSlots = () => {
     const dayName = selectedDate.toFormat('EEEE');
     const workDays = store.work_days || store.workDays || [];
@@ -416,10 +545,12 @@ export default function DashboardPage({ params }: { params: { storeName: string 
 
     if (!workDay || !workDay.enabled) return { slots: [], isOpen: false };
 
+    const slots: DateTime[] = [];
+
+    // First time range
     const [startHour, startMin] = workDay.startTime.split(':').map(Number);
     const [endHour, endMin] = workDay.endTime.split(':').map(Number);
 
-    const slots: DateTime[] = [];
     let current = selectedDate.set({ hour: startHour, minute: startMin });
     const end = selectedDate.set({ hour: endHour, minute: endMin });
 
@@ -428,192 +559,254 @@ export default function DashboardPage({ params }: { params: { storeName: string 
       current = current.plus({ minutes: 15 });
     }
 
+    // Second time range (if exists - e.g., after lunch break)
+    if (workDay.startTime2 && workDay.endTime2) {
+      const [startHour2, startMin2] = workDay.startTime2.split(':').map(Number);
+      const [endHour2, endMin2] = workDay.endTime2.split(':').map(Number);
+
+      let current2 = selectedDate.set({ hour: startHour2, minute: startMin2 });
+      const end2 = selectedDate.set({ hour: endHour2, minute: endMin2 });
+
+      while (current2 < end2) {
+        slots.push(current2);
+        current2 = current2.plus({ minutes: 15 });
+      }
+    }
+
     return { slots, isOpen: true };
   };
 
   const { slots: timeSlots, isOpen } = generateTimeSlots();
 
 
-  // Check if a time slot has a reservation for an employee
-  const getReservationAtSlot = (employeeEmail: string, slotTime: DateTime) => {
-    const found = dayReservations.find(r => {
+  // Get all reservations that overlap at a specific time slot for an employee
+  const getReservationsAtSlot = (employeeEmail: string, slotTime: DateTime): Reservation[] => {
+    return dayReservations.filter(r => {
       if (r.employee !== employeeEmail) return false;
       const resStart = DateTime.fromISO(r.date_time).setZone('Europe/Athens');
       const resEnd = resStart.plus({ minutes: r.service_duration || r.serviceDuration || 0 });
       return slotTime >= resStart && slotTime < resEnd;
     });
+  };
 
-    return found;
+  // Check if a time slot has a reservation for an employee (backwards compatibility)
+  const getReservationAtSlot = (employeeEmail: string, slotTime: DateTime) => {
+    const reservations = getReservationsAtSlot(employeeEmail, slotTime);
+    return reservations.length > 0 ? reservations[0] : undefined;
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text mb-2">Dashboard</h1>
-        <p className="text-text-secondary">Welcome to your store management panel</p>
+        <h1 className="text-3xl font-bold text-text">{store.title || store.store_name}</h1>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-border">
-        <div className="flex gap-4">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as Tab)}
-              className={`
-                px-4 py-2 font-medium transition-all border-b-2
-                ${activeTab === tab.id
-                  ? 'text-primary border-primary'
-                  : 'text-text-secondary border-transparent hover:text-text hover:border-border'
-                }
-              `}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Schedule Tab */}
       {activeTab === 'overview' && (
-        <div className="space-y-4">
-          {/* Date Picker */}
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              onClick={() => setSelectedDate(selectedDate.minus({ days: 1 }))}
-            >
-              ← Previous Day
-            </Button>
-            <Input
-              type="date"
-              value={selectedDate.toFormat('yyyy-MM-dd')}
-              onChange={(e) => setSelectedDate(DateTime.fromISO(e.target.value).setZone('Europe/Athens'))}
-              className="w-auto"
-            />
-            <Button
-              variant="outline"
-              onClick={() => setSelectedDate(selectedDate.plus({ days: 1 }))}
-            >
-              Next Day →
-            </Button>
-            <Button
-              onClick={() => setSelectedDate(DateTime.now().setZone('Europe/Athens'))}
-            >
-              Today
-            </Button>
-            <p className="text-text font-medium">{selectedDate.toFormat('EEEE, MMMM d, yyyy')}</p>
+        <div className="space-y-6">
+          {/* Date Navigation */}
+          <div className="bg-surface rounded-xl border border-border p-4 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedDate(selectedDate.minus({ days: 1 }))}
+                  className="p-2 rounded-lg hover:bg-surface-secondary transition-colors text-text-secondary hover:text-text"
+                  title="Previous day"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <div className="text-center min-w-[200px]">
+                  <p className="text-2xl font-bold text-text">{selectedDate.toFormat('d MMMM')}</p>
+                  <p className="text-sm text-text-secondary">{selectedDate.toFormat('EEEE, yyyy')}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedDate(selectedDate.plus({ days: 1 }))}
+                  className="p-2 rounded-lg hover:bg-surface-secondary transition-colors text-text-secondary hover:text-text"
+                  title="Next day"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="date"
+                  value={selectedDate.toFormat('yyyy-MM-dd')}
+                  onChange={(e) => setSelectedDate(DateTime.fromISO(e.target.value).setZone('Europe/Athens'))}
+                  className="w-auto text-sm"
+                />
+                <Button
+                  variant={selectedDate.hasSame(DateTime.now(), 'day') ? 'secondary' : 'primary'}
+                  size="sm"
+                  onClick={() => setSelectedDate(DateTime.now().setZone('Europe/Athens'))}
+                >
+                  Today
+                </Button>
+              </div>
+            </div>
           </div>
 
           {/* Schedule Grid */}
           {!isOpen ? (
-            <Card>
-              <CardContent className="py-8 text-center text-text-secondary">
-                Store is closed on this day.
-              </CardContent>
-            </Card>
+            <div className="bg-surface rounded-xl border border-border p-12 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-surface-secondary flex items-center justify-center">
+                <svg className="w-8 h-8 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-text mb-2">Store Closed</h3>
+              <p className="text-text-secondary">The store is closed on {selectedDate.toFormat('EEEE')}s.</p>
+            </div>
           ) : employees.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-text-secondary">
-                No employees found. Please add employees to manage schedule.
-              </CardContent>
-            </Card>
+            <div className="bg-surface rounded-xl border border-border p-12 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-surface-secondary flex items-center justify-center">
+                <svg className="w-8 h-8 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-text mb-2">No Employees</h3>
+              <p className="text-text-secondary">Add employees to start managing the schedule.</p>
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <div className="inline-block min-w-full">
-                <div className="grid gap-0 border border-border rounded-lg overflow-hidden" style={{ gridTemplateColumns: `80px repeat(${employees.length}, minmax(150px, 1fr))` }}>
-                  {/* Header Row */}
-                  <div className="bg-surface-secondary border-b border-r border-border p-2 font-semibold text-sm sticky top-0 z-10">
-                    Time
-                  </div>
-                  {employees.map((employee) => (
-                    <div
-                      key={employee.id}
-                      className="bg-surface-secondary border-b border-r border-border last:border-r-0 p-2 sticky top-0 z-10"
-                    >
-                      <p className="font-semibold text-sm text-primary truncate">
-                        {employee.email.split('@')[0]}
-                      </p>
-                      <p className="text-xs text-text-secondary truncate">{employee.category}</p>
+            <div className="bg-surface rounded-xl border border-border shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <div className="inline-block min-w-full">
+                  <div className="grid gap-0" style={{ gridTemplateColumns: `70px repeat(${employees.length}, minmax(160px, 1fr))` }}>
+                    {/* Header Row */}
+                    <div className="bg-gradient-to-b from-surface-secondary to-surface border-b-2 border-border p-3 font-semibold text-xs text-text-secondary uppercase tracking-wider sticky top-0 z-20">
+                      Time
                     </div>
-                  ))}
+                    {employees.map((employee) => (
+                      <div
+                        key={employee.id}
+                        className="bg-gradient-to-b from-surface-secondary to-surface border-b-2 border-l border-border last:border-r-0 p-3 sticky top-0 z-20"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
+                            {employee.email.split('@')[0].charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-sm text-text truncate">
+                              {employee.email.split('@')[0]}
+                            </p>
+                            <p className="text-xs text-text-secondary truncate">{employee.category}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
 
-                  {/* Time Slots */}
-                  {timeSlots.length > 0 ? (
-                    timeSlots.map((slot) => {
+                    {/* Time Slots */}
+                    {timeSlots.length > 0 ? (
+                    timeSlots.map((slot, slotIndex) => {
                       const isHour = slot.minute === 0;
+                      const isHalfHour = slot.minute === 30;
                       return (
                         <React.Fragment key={`row-${slot.toISO()}`}>
                           {/* Time Label */}
                           <div
-                            className={`border-r border-border p-2 text-xs ${
-                              isHour ? 'font-semibold border-t border-t-border' : 'border-t border-t-border/30'
+                            className={`border-l border-border px-2 py-1 text-xs flex items-center justify-center ${
+                              isHour
+                                ? 'font-bold text-text border-t-2 border-t-border bg-surface-secondary/50'
+                                : isHalfHour
+                                  ? 'text-text-secondary border-t border-t-border/50'
+                                  : 'text-text-secondary/50 border-t border-t-border/20'
                             }`}
                           >
-                            {slot.toFormat('HH:mm')}
+                            {isHour ? slot.toFormat('HH:mm') : isHalfHour ? slot.toFormat('HH:mm') : ''}
                           </div>
 
                           {/* Employee Slots */}
                           {employees.map((employee) => {
-                            const reservation = getReservationAtSlot(employee.email, slot);
+                            const reservations = getReservationsAtSlot(employee.email, slot);
+                            const hasReservations = reservations.length > 0;
 
-                            // Check if this slot is the start of a reservation (compare hour and minute only)
-                            const isStartOfReservation = reservation && (() => {
-                              const resStart = DateTime.fromISO(reservation.date_time).setZone('Europe/Athens');
-                              return slot.hour === resStart.hour && slot.minute === resStart.minute;
-                            })();
-
-                            // Calculate height based on reservation duration
-                            const slotHeight = 48; // pixels per 15-minute slot (40px + 8px padding)
+                            // Constants for calculations
+                            const slotHeight = 48; // pixels per 15-minute slot
                             const slotDuration = 15; // minutes
-                            const numSlots = reservation
-                              ? Math.ceil((reservation.service_duration || reservation.serviceDuration || 0) / slotDuration)
-                              : 1;
-                            const reservationHeight = numSlots * slotHeight;
 
                             return (
                               <div
                                 key={`slot-${employee.id}-${slot.toISO()}`}
-                                className={`border-r last:border-r-0 border-border p-1 ${
-                                  isHour ? 'border-t border-t-border' : 'border-t border-t-border/30'
-                                } ${reservation ? 'bg-primary/5' : ''} relative`}
+                                className={`border-l border-border ${
+                                  isHour
+                                    ? 'border-t-2 border-t-border'
+                                    : isHalfHour
+                                      ? 'border-t border-t-border/50'
+                                      : 'border-t border-t-border/20'
+                                } ${hasReservations ? '' : 'hover:bg-primary/5'} relative group`}
                                 style={{ height: '48px' }}
                               >
-                                {reservation ? (
-                                  isStartOfReservation ? (
-                                    <div
-                                      className="bg-primary text-white rounded p-2 text-xs absolute top-0 left-0 right-0 z-10 shadow-md flex flex-col"
-                                      style={{ height: `${reservationHeight}px` }}
-                                    >
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setDeleteConfirmReservation(reservation);
-                                        }}
-                                        className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded bg-white/20 hover:bg-white/30 transition-colors"
-                                        title="Delete reservation"
-                                      >
-                                        <span className="text-white font-bold text-sm">×</span>
-                                      </button>
-                                      <p className="font-semibold truncate pr-6">{reservation.name}</p>
-                                      <p className="text-white/90 truncate text-[10px] mt-0.5">
-                                        {reservation.service_name || reservation.serviceName}
-                                      </p>
-                                      <p className="text-white/80 text-[10px] mt-0.5">
-                                        {reservation.service_duration || reservation.serviceDuration} min
-                                      </p>
-                                    </div>
-                                  ) : null
+                                {hasReservations ? (
+                                  <>
+                                    {reservations.map((reservation, index) => {
+                                      // Check if this slot is the start of this reservation
+                                      const resStart = DateTime.fromISO(reservation.date_time).setZone('Europe/Athens');
+                                      const isStartOfReservation = slot.hour === resStart.hour && slot.minute === resStart.minute;
+
+                                      if (!isStartOfReservation) return null;
+
+                                      // Calculate height and width
+                                      const numSlots = Math.ceil((reservation.service_duration || reservation.serviceDuration || 0) / slotDuration);
+                                      const reservationHeight = numSlots * slotHeight;
+                                      const widthPercent = 100 / reservations.length;
+                                      const leftPercent = (index / reservations.length) * 100;
+
+                                      const nameColor = stringToColor(reservation.name);
+
+                                      return (
+                                        <div
+                                          key={`res-${reservation.id}`}
+                                          onClick={() => openEditReservation(reservation)}
+                                          className="text-white rounded-lg p-2 text-xs absolute z-10 shadow-lg flex flex-col cursor-pointer transition-all duration-200 hover:shadow-xl hover:scale-[1.02] overflow-hidden"
+                                          style={{
+                                            top: '3px',
+                                            height: `${reservationHeight - 6}px`,
+                                            width: `calc(${widthPercent}% - 4px)`,
+                                            left: `calc(${leftPercent}% + 2px)`,
+                                            backgroundColor: nameColor.bg,
+                                          }}
+                                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = nameColor.hover}
+                                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = nameColor.bg}
+                                        >
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setDeleteConfirmReservation(reservation);
+                                            }}
+                                            className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/30 transition-colors z-20"
+                                            title="Delete reservation"
+                                          >
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                          </button>
+                                          <p className="font-semibold truncate pr-6 leading-tight">{reservation.name}</p>
+                                          <p className="text-white/80 truncate text-[10px] mt-1 leading-tight">
+                                            {reservation.service_name || reservation.serviceName}
+                                          </p>
+                                          <p className="text-white/60 text-[10px] mt-auto leading-tight">
+                                            {reservation.service_duration || reservation.serviceDuration} min
+                                          </p>
+                                        </div>
+                                      );
+                                    })}
+                                  </>
                                 ) : (
                                   <button
                                     onClick={() => {
                                       setNewReservationSlot({ employee: employee.email, time: slot });
                                       setShowNewReservationModal(true);
                                     }}
-                                    className="w-full h-full min-h-[38px] flex items-center justify-center text-text-secondary hover:text-primary hover:bg-surface-secondary rounded transition-colors"
+                                    className="w-full h-full flex items-center justify-center text-transparent group-hover:text-primary/50 hover:!text-primary transition-all duration-200"
                                     title="Add reservation"
                                   >
-                                    <span className="text-xl">+</span>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
                                   </button>
                                 )}
                               </div>
@@ -622,11 +815,18 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                         </React.Fragment>
                       );
                     })
-                  ) : (
-                    <div className="col-span-full p-8 text-center text-text-secondary">
-                      No time slots available. Please configure work hours in settings.
-                    </div>
-                  )}
+                    ) : (
+                      <div className="col-span-full p-12 text-center">
+                        <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-surface-secondary flex items-center justify-center">
+                          <svg className="w-6 h-6 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                        </div>
+                        <p className="text-text-secondary">No time slots configured.</p>
+                        <p className="text-sm text-text-secondary/70 mt-1">Set up work hours in Settings.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1057,11 +1257,18 @@ export default function DashboardPage({ params }: { params: { storeName: string 
                 required
               >
                 <option value="">Select a service</option>
-                {services.map((service) => (
-                  <option key={service.id} value={service.id}>
-                    {(service as any).service_name || service.serviceName} - {service.duration} min - €{service.price}
-                  </option>
-                ))}
+                {(() => {
+                  const employee = employees.find(e => e.email === newReservationSlot?.employee);
+                  const filteredServices = employee
+                    ? services.filter(s => s.profession === employee.category)
+                    : services;
+
+                  return filteredServices.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {(service as any).service_name || service.serviceName} - {service.duration} min - €{service.price}
+                    </option>
+                  ));
+                })()}
               </select>
             </div>
 
@@ -1093,6 +1300,117 @@ export default function DashboardPage({ params }: { params: { storeName: string 
               </Button>
               <Button type="submit">
                 Create Reservation
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Edit Reservation Modal */}
+      <Modal
+        isOpen={!!editingReservation}
+        onClose={() => {
+          setEditingReservation(null);
+          setEditReservationForm({
+            name: '',
+            email: '',
+            phone: '',
+            service: '',
+            note: '',
+            dateTime: '',
+          });
+        }}
+        title="Edit Reservation"
+        size="lg"
+      >
+        {editingReservation && (
+          <form onSubmit={handleUpdateReservation} className="space-y-4">
+            <Input
+              label="Client Name"
+              placeholder="John Doe"
+              value={editReservationForm.name}
+              onChange={(e) => setEditReservationForm({ ...editReservationForm, name: e.target.value })}
+              required
+            />
+
+            <Input
+              type="email"
+              label="Email"
+              placeholder="john@example.com"
+              value={editReservationForm.email}
+              onChange={(e) => setEditReservationForm({ ...editReservationForm, email: e.target.value })}
+              required
+            />
+
+            <Input
+              type="tel"
+              label="Phone"
+              placeholder="+30 123 456 7890"
+              value={editReservationForm.phone}
+              onChange={(e) => setEditReservationForm({ ...editReservationForm, phone: e.target.value })}
+              required
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-text mb-1">Service</label>
+              <select
+                value={editReservationForm.service}
+                onChange={(e) => setEditReservationForm({ ...editReservationForm, service: e.target.value })}
+                className="w-full px-3 py-2 bg-surface border border-border rounded-lg text-text focus:outline-none focus:ring-2 focus:ring-primary"
+                required
+              >
+                <option value="">Select a service</option>
+                {(() => {
+                  const employee = employees.find(e => e.email === editingReservation?.employee);
+                  const filteredServices = employee
+                    ? services.filter(s => s.profession === employee.category)
+                    : services;
+
+                  return filteredServices.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {(service as any).service_name || service.serviceName} - {service.duration} min - €{service.price}
+                    </option>
+                  ));
+                })()}
+              </select>
+            </div>
+
+            <Input
+              type="datetime-local"
+              label="Date & Time"
+              value={editReservationForm.dateTime}
+              onChange={(e) => setEditReservationForm({ ...editReservationForm, dateTime: e.target.value })}
+              required
+            />
+
+            <Textarea
+              label="Notes (Optional)"
+              placeholder="Any special requests..."
+              value={editReservationForm.note}
+              onChange={(e) => setEditReservationForm({ ...editReservationForm, note: e.target.value })}
+              rows={3}
+            />
+
+            <div className="flex gap-2 justify-end pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditingReservation(null);
+                  setEditReservationForm({
+                    name: '',
+                    email: '',
+                    phone: '',
+                    service: '',
+                    note: '',
+                    dateTime: '',
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                Update Reservation
               </Button>
             </div>
           </form>

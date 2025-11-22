@@ -104,6 +104,8 @@ export function isAnyEmployeeAvailable(
 
 /**
  * Check if a sequence of services can be booked starting at a given time
+ * This version tries to ensure the same employee can handle consecutive services
+ * of the same profession when possible.
  */
 export function canBookServicesAtTime(
   startTime: DateTime,
@@ -111,19 +113,48 @@ export function canBookServicesAtTime(
   employees: Employee[],
   existingReservations: Reservation[]
 ): boolean {
+  // Group consecutive services by profession
+  const serviceGroups: Array<{ profession: string; startTime: DateTime; endTime: DateTime }> = [];
   let currentTime = startTime;
 
-  for (const service of services) {
+  for (let i = 0; i < services.length; i++) {
+    const service = services[i];
+    const serviceStart = currentTime;
+    const serviceEnd = currentTime.plus({ minutes: service.duration });
+
+    // Check if we can merge with the previous group (same profession, consecutive time)
+    const lastGroup = serviceGroups[serviceGroups.length - 1];
+    if (lastGroup && lastGroup.profession === service.profession && lastGroup.endTime.equals(serviceStart)) {
+      // Extend the last group
+      lastGroup.endTime = serviceEnd;
+    } else {
+      // Create a new group
+      serviceGroups.push({
+        profession: service.profession,
+        startTime: serviceStart,
+        endTime: serviceEnd
+      });
+    }
+
+    currentTime = serviceEnd;
+  }
+
+  console.log(`Checking ${services.length} services in ${serviceGroups.length} groups at ${startTime.toFormat('HH:mm')}`);
+
+  // Now check if each group can be serviced by at least one employee
+  for (const group of serviceGroups) {
+    const duration = group.endTime.diff(group.startTime, 'minutes').minutes;
+
     if (!isAnyEmployeeAvailable(
-      service.profession,
-      currentTime,
-      service.duration,
+      group.profession,
+      group.startTime,
+      duration,
       employees,
       existingReservations
     )) {
+      console.log(`Cannot book ${group.profession} from ${group.startTime.toFormat('HH:mm')} to ${group.endTime.toFormat('HH:mm')}`);
       return false;
     }
-    currentTime = currentTime.plus({ minutes: service.duration });
   }
 
   return true;

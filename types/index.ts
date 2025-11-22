@@ -62,6 +62,8 @@ export interface WorkDay {
   day: string;
   startTime: string;
   endTime: string;
+  startTime2?: string; // Second opening time (e.g., after lunch break)
+  endTime2?: string;   // Second closing time
   enabled: boolean;
 }
 

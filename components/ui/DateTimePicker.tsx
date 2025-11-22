@@ -99,15 +99,50 @@ export function DateTimePicker({
 
     if (!workDay || !workDay.enabled) return [];
 
-    const [startHour, startMin] = workDay.startTime.split(':').map(Number);
-    const [endHour, endMin] = workDay.endTime.split(':').map(Number);
-
     const slots: string[] = [];
-    let current = selectedDate.set({ hour: startHour, minute: startMin });
-    const end = selectedDate.set({ hour: endHour, minute: endMin });
 
-    // Subtract total duration from end time to ensure appointment can be completed
-    const lastPossibleStart = end.minus({ minutes: totalDuration });
+    // Helper function to add slots for a time range
+    const addSlotsForRange = (startTime: string, endTime: string) => {
+      const [startHour, startMin] = startTime.split(':').map(Number);
+      const [endHour, endMin] = endTime.split(':').map(Number);
+
+      let current = selectedDate.set({ hour: startHour, minute: startMin });
+      const end = selectedDate.set({ hour: endHour, minute: endMin });
+
+      // Subtract total duration from end time to ensure appointment can be completed
+      const lastPossibleStart = end.minus({ minutes: totalDuration });
+
+      while (current <= lastPossibleStart) {
+        const timeStr = current.toFormat('HH:mm');
+        const isoStr = current.toISO() || '';
+
+        // Check availability using conflict detection if services and employees are provided
+        let isAvailable = true;
+
+        if (services.length > 0 && employees.length > 0) {
+          // Use conflict detection to check if all services can be booked at this time
+          isAvailable = canBookServicesAtTime(
+            current,
+            services,
+            employees,
+            existingReservations
+          );
+
+          if (!isAvailable) {
+            console.log(`${timeStr} blocked - conflict detected`);
+          }
+        } else if (availableSlots.length > 0) {
+          // Fallback to old method if conflict detection data not provided
+          isAvailable = availableSlots.includes(isoStr);
+        }
+
+        if (isAvailable) {
+          slots.push(timeStr);
+        }
+
+        current = current.plus({ minutes: 15 }); // 15-minute intervals
+      }
+    };
 
     console.log('Generating time slots with:', {
       services: services.length,
@@ -116,35 +151,12 @@ export function DateTimePicker({
       date: selectedDate.toFormat('yyyy-MM-dd')
     });
 
-    while (current <= lastPossibleStart) {
-      const timeStr = current.toFormat('HH:mm');
-      const isoStr = current.toISO() || '';
+    // First time range
+    addSlotsForRange(workDay.startTime, workDay.endTime);
 
-      // Check availability using conflict detection if services and employees are provided
-      let isAvailable = true;
-
-      if (services.length > 0 && employees.length > 0) {
-        // Use conflict detection to check if all services can be booked at this time
-        isAvailable = canBookServicesAtTime(
-          current,
-          services,
-          employees,
-          existingReservations
-        );
-
-        if (!isAvailable) {
-          console.log(`${timeStr} blocked - conflict detected`);
-        }
-      } else if (availableSlots.length > 0) {
-        // Fallback to old method if conflict detection data not provided
-        isAvailable = availableSlots.includes(isoStr);
-      }
-
-      if (isAvailable) {
-        slots.push(timeStr);
-      }
-
-      current = current.plus({ minutes: 15 }); // 15-minute intervals
+    // Second time range (if exists - e.g., after lunch break)
+    if (workDay.startTime2 && workDay.endTime2) {
+      addSlotsForRange(workDay.startTime2, workDay.endTime2);
     }
 
     console.log(`Total available slots: ${slots.length}`);

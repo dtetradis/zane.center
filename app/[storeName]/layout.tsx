@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
-import StoreNav from '@/components/store/StoreNav';
+import ConditionalStoreNav from '@/components/store/ConditionalStoreNav';
 
 export default async function StoreLayout({
   children,
@@ -24,7 +24,7 @@ export default async function StoreLayout({
 
   return (
     <div className="min-h-screen bg-background">
-      <StoreNav store={store} />
+      <ConditionalStoreNav store={store} />
       <main>{children}</main>
     </div>
   );

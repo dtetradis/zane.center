@@ -18,11 +18,11 @@ export default async function DashboardLayout({
   // }
 
   return (
-    <div className="min-h-screen bg-background">
+    <>
       <DashboardNav storeName={params.storeName} />
-      <main className="container mx-auto px-4 py-8">
+      <main className="ml-16 container mx-auto px-4 py-8">
         {children}
       </main>
-    </div>
+    </>
   );
 }
