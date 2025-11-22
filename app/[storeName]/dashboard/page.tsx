@@ -371,12 +371,17 @@ export default function DashboardPage({ params }: { params: { storeName: string 
       const selectedService = services.find(s => s.id === editReservationForm.service);
       if (!selectedService) return;
 
+      const dateTimeISO = toGreekISO(new Date(editReservationForm.dateTime));
+      if (!dateTimeISO) {
+        throw new Error('Invalid date time');
+      }
+
       const updates = {
         name: editReservationForm.name,
         email: editReservationForm.email,
         phone: editReservationForm.phone,
         note: editReservationForm.note,
-        date_time: toGreekISO(new Date(editReservationForm.dateTime)),
+        date_time: dateTimeISO,
         service_duration: selectedService.duration,
         service_name: (selectedService as any).service_name || selectedService.serviceName,
         profession: selectedService.profession,
