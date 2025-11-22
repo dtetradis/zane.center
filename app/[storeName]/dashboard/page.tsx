@@ -267,8 +267,10 @@ export default function DashboardPage({ params }: { params: { storeName: string 
 
       if (error) throw error;
 
-      setAllReservations(allReservations.filter((r) => r.id !== selectedReservation.id));
-      setDayReservations(dayReservations.filter((r) => r.id !== selectedReservation.id));
+      // Use functional updates to avoid stale state
+      setAllReservations(prev => prev.filter((r) => r.id !== selectedReservation.id));
+      setFilteredReservations(prev => prev.filter((r) => r.id !== selectedReservation.id));
+      setDayReservations(prev => prev.filter((r) => r.id !== selectedReservation.id));
       setShowCancelModal(false);
       setSelectedReservation(null);
     } catch (error) {
@@ -279,7 +281,7 @@ export default function DashboardPage({ params }: { params: { storeName: string 
   const [deleteConfirmReservation, setDeleteConfirmReservation] = useState<Reservation | null>(null);
 
   const handleDeleteReservation = async () => {
-    if (!deleteConfirmReservation) return;
+    if (!deleteConfirmReservation || !store) return;
 
     try {
       const result = await deleteReservation(deleteConfirmReservation.id);
@@ -288,9 +290,10 @@ export default function DashboardPage({ params }: { params: { storeName: string 
         throw new Error(result.error || 'Failed to delete reservation');
       }
 
-      // Refresh the data
-      await fetchDayReservations();
-      await fetchAllData();
+      // Use functional updates to immediately update UI
+      setDayReservations(prev => prev.filter(r => r.id !== deleteConfirmReservation.id));
+      setAllReservations(prev => prev.filter(r => r.id !== deleteConfirmReservation.id));
+      setFilteredReservations(prev => prev.filter(r => r.id !== deleteConfirmReservation.id));
 
       setDeleteConfirmReservation(null);
     } catch (error) {
@@ -326,8 +329,8 @@ export default function DashboardPage({ params }: { params: { storeName: string 
 
       if (error) throw error;
 
-      // Refresh reservations
-      await fetchDayReservations();
+      // Refresh reservations - pass current values explicitly
+      await fetchDayReservations(selectedDate, store.id);
       await fetchAllData();
 
       setShowNewReservationModal(false);
@@ -393,8 +396,8 @@ export default function DashboardPage({ params }: { params: { storeName: string 
         throw new Error(result.error || 'Failed to update reservation');
       }
 
-      // Refresh reservations
-      await fetchDayReservations();
+      // Refresh reservations - pass current values explicitly
+      await fetchDayReservations(selectedDate, store.id);
       await fetchAllData();
 
       setEditingReservation(null);
