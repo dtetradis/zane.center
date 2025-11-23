@@ -5,6 +5,11 @@ import { DateTime } from 'luxon';
 import { Button } from './Button';
 import { canBookServicesAtTime } from '@/lib/reservationUtils';
 
+interface EmployeeClosure {
+  employeeEmail: string;
+  date: string;
+}
+
 interface DateTimePickerProps {
   value: string;
   onChange: (datetime: string) => void;
@@ -16,6 +21,7 @@ interface DateTimePickerProps {
   services?: Array<{ profession: string; duration: number }>;
   employees?: any[];
   existingReservations?: any[];
+  employeeClosures?: EmployeeClosure[];
 }
 
 export function DateTimePicker({
@@ -28,7 +34,8 @@ export function DateTimePicker({
   totalDuration,
   services = [],
   employees = [],
-  existingReservations = []
+  existingReservations = [],
+  employeeClosures = []
 }: DateTimePickerProps) {
   const [selectedDate, setSelectedDate] = useState<DateTime | null>(
     value ? DateTime.fromISO(value) : null
@@ -99,6 +106,28 @@ export function DateTimePicker({
 
     if (!workDay || !workDay.enabled) return [];
 
+    const dateStr = selectedDate.toFormat('yyyy-MM-dd');
+
+    // Filter out employees who are closed on this date
+    const availableEmployees = employees.filter(emp => {
+      const isClosed = employeeClosures.some(
+        c => c.employeeEmail === emp.email && c.date === dateStr
+      );
+      return !isClosed;
+    });
+
+    // Check if we have at least one available employee for each required profession
+    if (services.length > 0 && employees.length > 0) {
+      const requiredProfessions = Array.from(new Set(services.map(s => s.profession)));
+      for (const profession of requiredProfessions) {
+        const hasAvailableEmployee = availableEmployees.some(emp => emp.category === profession);
+        if (!hasAvailableEmployee) {
+          console.log(`No available employees for profession ${profession} on ${dateStr} - all are closed or none exist`);
+          return []; // No slots if any required profession has no available employees
+        }
+      }
+    }
+
     const slots: string[] = [];
 
     // Helper function to add slots for a time range
@@ -120,16 +149,21 @@ export function DateTimePicker({
         let isAvailable = true;
 
         if (services.length > 0 && employees.length > 0) {
-          // Use conflict detection to check if all services can be booked at this time
-          isAvailable = canBookServicesAtTime(
-            current,
-            services,
-            employees,
-            existingReservations
-          );
+          if (availableEmployees.length === 0) {
+            // No employees available (all closed) - no slots available
+            isAvailable = false;
+          } else {
+            // Use conflict detection with only available employees
+            isAvailable = canBookServicesAtTime(
+              current,
+              services,
+              availableEmployees,
+              existingReservations
+            );
+          }
 
           if (!isAvailable) {
-            console.log(`${timeStr} blocked - conflict detected`);
+            console.log(`${timeStr} blocked - conflict or no available employees`);
           }
         } else if (availableSlots.length > 0) {
           // Fallback to old method if conflict detection data not provided
@@ -147,8 +181,13 @@ export function DateTimePicker({
     console.log('Generating time slots with:', {
       services: services.length,
       employees: employees.length,
+      availableEmployees: availableEmployees.length,
       reservations: existingReservations.length,
-      date: selectedDate.toFormat('yyyy-MM-dd')
+      employeeClosures: employeeClosures.length,
+      closuresForDate: employeeClosures.filter(c => c.date === dateStr),
+      date: selectedDate.toFormat('yyyy-MM-dd'),
+      requiredProfessions: [...new Set(services.map(s => s.profession))],
+      employeeCategories: employees.map(e => ({ email: e.email, category: e.category }))
     });
 
     // First time range
