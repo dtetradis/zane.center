@@ -186,7 +186,7 @@ export function DateTimePicker({
       employeeClosures: employeeClosures.length,
       closuresForDate: employeeClosures.filter(c => c.date === dateStr),
       date: selectedDate.toFormat('yyyy-MM-dd'),
-      requiredProfessions: [...new Set(services.map(s => s.profession))],
+      requiredProfessions: Array.from(new Set(services.map(s => s.profession))),
       employeeCategories: employees.map(e => ({ email: e.email, category: e.category }))
     });
 
