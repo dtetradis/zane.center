@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import type { Service } from '@/types';
+import { createService, updateService, deleteService } from '@/app/actions/services';
 
 export default function ServicesPage() {
   const params = useParams();
@@ -70,24 +71,31 @@ export default function ServicesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!storeId) {
+      alert('Store not found');
+      return;
+    }
+
     try {
+      // Transform camelCase form data to snake_case for database
+      const dbData = {
+        service_name: formData.serviceName,
+        profession: formData.profession,
+        category: formData.category,
+        duration: formData.duration,
+        price: formData.price,
+        description: formData.description,
+      };
+
+      let result;
       if (editingService) {
-        // Update existing service
-        const { error } = await supabase
-          .from('services')
-          .update(formData)
-          .eq('id', editingService.id);
-
-        if (error) throw error;
+        result = await updateService(editingService.id, dbData);
       } else {
-        // Create new service
-        const { error } = await supabase.from('services').insert({
-          ...formData,
-          id_store: storeId,
-          index: services.length,
-        });
+        result = await createService(storeId, dbData, services.length);
+      }
 
-        if (error) throw error;
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to save service');
       }
 
       await fetchServices();
@@ -95,6 +103,7 @@ export default function ServicesPage() {
       resetForm();
     } catch (error) {
       console.error('Error saving service:', error);
+      alert('Failed to save service. Please try again.');
     }
   };
 
@@ -102,16 +111,16 @@ export default function ServicesPage() {
     if (!confirm('Are you sure you want to delete this service?')) return;
 
     try {
-      const { error } = await supabase
-        .from('services')
-        .delete()
-        .eq('id', serviceId);
+      const result = await deleteService(serviceId);
 
-      if (error) throw error;
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete service');
+      }
 
       await fetchServices();
     } catch (error) {
       console.error('Error deleting service:', error);
+      alert('Failed to delete service. Please try again.');
     }
   };
 
@@ -129,8 +138,10 @@ export default function ServicesPage() {
 
   const openEditModal = (service: Service) => {
     setEditingService(service);
+    // Handle both snake_case (from DB) and camelCase field names
+    const serviceName = (service as any).service_name || service.serviceName || '';
     setFormData({
-      serviceName: service.serviceName,
+      serviceName,
       profession: service.profession,
       category: service.category,
       duration: service.duration,

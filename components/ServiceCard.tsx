@@ -12,12 +12,15 @@ interface ServiceCardProps {
 }
 
 export function ServiceCard({ service, onAddToCart, isInCart = false, hideAddButton = false }: ServiceCardProps) {
+  // Handle both snake_case (from DB) and camelCase field names
+  const serviceName = (service as any).service_name || service.serviceName || '';
+
   return (
     <div className="bg-surface rounded-lg border border-border p-4 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-4">
         {/* Service Info */}
         <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-text mb-1">{service.serviceName}</h3>
+          <h3 className="text-lg font-semibold text-text mb-1">{serviceName}</h3>
           <p className="text-sm text-text-secondary mb-2">
             {service.profession} · {service.category}
           </p>
