@@ -55,6 +55,8 @@ export interface Store {
   whitelist: string[];
   themeColors?: ThemeColors;
   theme_colors?: ThemeColors; // Database field name
+  dateIcon?: string;
+  date_icon?: string; // Database field name
   created_at: string;
 }
 

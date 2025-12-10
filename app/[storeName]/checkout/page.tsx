@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/useCartStore';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
@@ -13,9 +14,11 @@ import { DateTime } from 'luxon';
 
 export default function CheckoutPage({ params }: { params: { storeName: string } }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const { items, storeId, getTotalPrice, clearCart } = useCartStore();
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [submittingCheckout, setSubmittingCheckout] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [existingReservations, setExistingReservations] = useState<any[]>([]);
   const supabase = createClient();
@@ -70,20 +73,20 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
     let isValid = true;
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
+      newErrors.name = t('checkout.nameRequired');
       isValid = false;
     }
 
     if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
+      newErrors.email = t('checkout.emailRequired');
       isValid = false;
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Invalid email format';
+      newErrors.email = t('checkout.emailInvalid');
       isValid = false;
     }
 
     if (!formData.phone.trim()) {
-      newErrors.phone = 'Phone is required';
+      newErrors.phone = t('checkout.phoneRequired');
       isValid = false;
     }
 
@@ -97,6 +100,7 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
     if (!validate()) return;
 
     setLoading(true);
+    setSubmittingCheckout(true);
 
     try {
       // Create reservations for each item with assigned employees
@@ -148,18 +152,19 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
       // Redirect to confirmation page
       router.push(`/${params.storeName}/reservation/${data[0].id}`);
     } catch (error: any) {
-      alert('Failed to create reservation. Please try again.');
+      alert(t('checkout.errorAlert'));
+      setSubmittingCheckout(false);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle redirect when cart is empty
+  // Handle redirect when cart is empty (but not during checkout submission)
   useEffect(() => {
-    if (mounted && items.length === 0) {
+    if (mounted && items.length === 0 && !submittingCheckout) {
       router.push(`/${params.storeName}/reservation`);
     }
-  }, [mounted, items.length, router, params.storeName]);
+  }, [mounted, items.length, submittingCheckout, router, params.storeName]);
 
   // Don't render until mounted to avoid SSR issues
   if (!mounted) {
@@ -172,20 +177,30 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-text mb-8">Checkout</h1>
+      <div className="flex items-center gap-4 mb-8">
+        <button
+          onClick={() => router.back()}
+          className="p-2 rounded-lg hover:bg-surface-secondary transition-colors text-text-secondary hover:text-text"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <h1 className="text-3xl font-bold text-text">{t('checkout.title')}</h1>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Checkout Form */}
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Your Information</CardTitle>
+              <CardTitle>{t('checkout.yourInformation')}</CardTitle>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
-                  label="Full Name"
-                  placeholder="John Doe"
+                  label={t('checkout.fullName')}
+                  placeholder={t('checkout.namePlaceholder')}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   error={errors.name}
@@ -194,8 +209,8 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
 
                 <Input
                   type="email"
-                  label="Email"
-                  placeholder="john@example.com"
+                  label={t('checkout.email')}
+                  placeholder={t('checkout.emailPlaceholder')}
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   error={errors.email}
@@ -204,8 +219,8 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
 
                 <Input
                   type="tel"
-                  label="Phone"
-                  placeholder="+30 123 456 7890"
+                  label={t('checkout.phone')}
+                  placeholder={t('checkout.phonePlaceholder')}
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   error={errors.phone}
@@ -213,15 +228,15 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
                 />
 
                 <Textarea
-                  label="Additional Notes (Optional)"
-                  placeholder="Any special requests or information..."
+                  label={t('checkout.additionalNotes')}
+                  placeholder={t('checkout.notesPlaceholder')}
                   value={formData.note}
                   onChange={(e) => setFormData({ ...formData, note: e.target.value })}
                   rows={4}
                 />
 
                 <Button type="submit" fullWidth size="lg" isLoading={loading}>
-                  Confirm Reservation
+                  {t('checkout.confirmReservation')}
                 </Button>
               </form>
             </CardContent>
@@ -232,7 +247,7 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
         <div className="lg:col-span-1">
           <Card className="sticky top-20">
             <CardHeader>
-              <CardTitle>Order Summary</CardTitle>
+              <CardTitle>{t('checkout.orderSummary')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {items.map((item) => (
@@ -246,7 +261,7 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
                     })}
                   </p>
                   {item.employee && (
-                    <p className="text-sm text-text-secondary">With: {item.employee}</p>
+                    <p className="text-sm text-text-secondary">{t('checkout.with')}: {item.employee}</p>
                   )}
                   <p className="text-sm font-bold text-primary mt-1">
                     €{item.service.price.toFixed(2)}
@@ -256,7 +271,7 @@ export default function CheckoutPage({ params }: { params: { storeName: string }
 
               <div className="pt-4 border-t border-border">
                 <div className="flex justify-between text-lg font-bold">
-                  <span className="text-text">Total:</span>
+                  <span className="text-text">{t('checkout.total')}:</span>
                   <span className="text-primary">€{getTotalPrice().toFixed(2)}</span>
                 </div>
               </div>

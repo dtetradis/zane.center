@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ServiceCard } from '@/components/ServiceCard';
 import { useCartStore } from '@/store/useCartStore';
+import { useLanguage } from '@/contexts/LanguageContext';
 import type { Service } from '@/types';
 
 export default function StoreServicesClient({
@@ -13,6 +14,7 @@ export default function StoreServicesClient({
   storeId: string;
 }) {
   const { items, addItem, removeItem, setStore } = useCartStore();
+  const { t } = useLanguage();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,6 +37,11 @@ export default function StoreServicesClient({
       // Remove from cart
       removeItem(service.id);
     } else {
+      // Check if cart already has 3 items
+      if (items.length >= 3) {
+        alert(t('store.maxServicesAlert'));
+        return;
+      }
       // Add to cart
       addItem(service);
     }
@@ -53,7 +60,7 @@ export default function StoreServicesClient({
                 : 'bg-surface text-text border border-border hover:bg-primary/10'
             }`}
           >
-            All
+            {t('common.all')}
           </button>
           {categories.map((category) => (
             <button
@@ -72,13 +79,16 @@ export default function StoreServicesClient({
       )}
 
       {/* Services List */}
-      <div className="space-y-3">
-        {filteredServices.map((service) => (
+      <div>
+        {filteredServices.map((service, index) => (
           <ServiceCard
             key={service.id}
             service={service}
             onAddToCart={handleAddToCart}
             isInCart={items.some((item) => item.service.id === service.id)}
+            disabled={items.length >= 3}
+            showCategory={false}
+            isLast={index === filteredServices.length - 1}
           />
         ))}
       </div>

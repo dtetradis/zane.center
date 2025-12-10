@@ -19,15 +19,19 @@ export function ReservationCard({
   onCancel,
   showActions = true,
 }: ReservationCardProps) {
+  // Handle both snake_case (from DB) and camelCase field names
+  const serviceName = (reservation as any).service_name || reservation.serviceName || 'Unknown Service';
+  const serviceDuration = (reservation as any).service_duration || reservation.serviceDuration || 0;
+
   return (
-    <Card>
+    <Card className="relative">
       <CardHeader>
-        <CardTitle>{reservation.serviceName}</CardTitle>
+        <CardTitle>{serviceName}</CardTitle>
         <CardDescription>
           {formatGreekDate(reservation.date_time)}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pb-12">
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-text-secondary">Client:</span>
@@ -49,7 +53,7 @@ export function ReservationCard({
           )}
           <div className="flex justify-between">
             <span className="text-text-secondary">Duration:</span>
-            <span className="text-text">{reservation.serviceDuration} min</span>
+            <span className="text-text">{serviceDuration} min</span>
           </div>
           {reservation.note && (
             <div className="mt-3 pt-3 border-t border-border">
@@ -59,18 +63,11 @@ export function ReservationCard({
           )}
         </div>
       </CardContent>
-      {showActions && (onEdit || onCancel) && (
-        <div className="px-6 pb-6 flex gap-2">
-          {onEdit && (
-            <Button variant="outline" size="sm" onClick={() => onEdit(reservation)}>
-              Edit
-            </Button>
-          )}
-          {onCancel && (
-            <Button variant="danger" size="sm" onClick={() => onCancel(reservation)}>
-              Cancel
-            </Button>
-          )}
+      {showActions && onCancel && (
+        <div className="absolute bottom-3 right-3">
+          <Button variant="danger" size="sm" onClick={() => onCancel(reservation)}>
+            Cancel
+          </Button>
         </div>
       )}
     </Card>

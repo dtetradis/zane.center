@@ -103,9 +103,72 @@ export function isAnyEmployeeAvailable(
 }
 
 /**
+ * Try to find a valid assignment of employees to service groups
+ * Uses backtracking to ensure all services can be covered without conflicts
+ */
+function findValidAssignment(
+  groups: Array<{ profession: string; startTime: DateTime; endTime: DateTime; index: number }>,
+  employees: Employee[],
+  existingReservations: Reservation[],
+  currentIndex: number,
+  assignment: Map<number, string>
+): boolean {
+  // Base case: all groups have been assigned
+  if (currentIndex >= groups.length) {
+    return true;
+  }
+
+  const group = groups[currentIndex];
+  const duration = group.endTime.diff(group.startTime, 'minutes').minutes;
+
+  // Get all employees who can perform this service
+  const qualifiedEmployees = employees.filter(
+    (emp) => emp.category === group.profession
+  );
+
+  // If no qualified employees exist, still allow booking (unspecified employee)
+  if (qualifiedEmployees.length === 0) {
+    return findValidAssignment(groups, employees, existingReservations, currentIndex + 1, assignment);
+  }
+
+  // Try each qualified employee
+  for (const employee of qualifiedEmployees) {
+    // Check if this employee is available for this time slot
+    // considering both existing reservations AND our current assignment
+    const tempReservations = [...existingReservations];
+
+    // Add all previously assigned services to the reservation list
+    for (const [groupIdx, employeeEmail] of Array.from(assignment.entries())) {
+      if (employeeEmail === employee.email) {
+        const assignedGroup = groups[groupIdx];
+        tempReservations.push({
+          date_time: assignedGroup.startTime.toISO()!,
+          service_duration: assignedGroup.endTime.diff(assignedGroup.startTime, 'minutes').minutes,
+          employee: employeeEmail,
+          profession: assignedGroup.profession
+        });
+      }
+    }
+
+    if (isEmployeeAvailable(employee.email, group.startTime, duration, tempReservations)) {
+      // This employee can handle this service, assign it and continue
+      assignment.set(currentIndex, employee.email);
+
+      if (findValidAssignment(groups, employees, existingReservations, currentIndex + 1, assignment)) {
+        return true; // Found a valid complete assignment
+      }
+
+      // Backtrack
+      assignment.delete(currentIndex);
+    }
+  }
+
+  return false; // No valid assignment found
+}
+
+/**
  * Check if a sequence of services can be booked starting at a given time
- * This version tries to ensure the same employee can handle consecutive services
- * of the same profession when possible.
+ * This version uses backtracking to find a valid assignment of employees to services
  */
 export function canBookServicesAtTime(
   startTime: DateTime,
@@ -113,51 +176,72 @@ export function canBookServicesAtTime(
   employees: Employee[],
   existingReservations: Reservation[]
 ): boolean {
-  // Group consecutive services by profession
-  const serviceGroups: Array<{ profession: string; startTime: DateTime; endTime: DateTime }> = [];
-  let currentTime = startTime;
+  if (services.length === 0) return true;
 
+  // Create individual service time slots (not grouped)
+  const serviceSlots: Array<{
+    profession: string;
+    startTime: DateTime;
+    endTime: DateTime;
+    index: number;
+  }> = [];
+
+  let currentTime = startTime;
   for (let i = 0; i < services.length; i++) {
     const service = services[i];
     const serviceStart = currentTime;
     const serviceEnd = currentTime.plus({ minutes: service.duration });
 
-    // Check if we can merge with the previous group (same profession, consecutive time)
-    const lastGroup = serviceGroups[serviceGroups.length - 1];
-    if (lastGroup && lastGroup.profession === service.profession && lastGroup.endTime.equals(serviceStart)) {
-      // Extend the last group
-      lastGroup.endTime = serviceEnd;
-    } else {
-      // Create a new group
-      serviceGroups.push({
-        profession: service.profession,
-        startTime: serviceStart,
-        endTime: serviceEnd
-      });
-    }
+    serviceSlots.push({
+      profession: service.profession,
+      startTime: serviceStart,
+      endTime: serviceEnd,
+      index: i
+    });
 
     currentTime = serviceEnd;
   }
 
-  console.log(`Checking ${services.length} services in ${serviceGroups.length} groups at ${startTime.toFormat('HH:mm')}`);
+  // Group consecutive services by profession for optimization
+  const serviceGroups: Array<{
+    profession: string;
+    startTime: DateTime;
+    endTime: DateTime;
+    index: number;
+  }> = [];
 
-  // Now check if each group can be serviced by at least one employee
-  for (const group of serviceGroups) {
-    const duration = group.endTime.diff(group.startTime, 'minutes').minutes;
+  for (const slot of serviceSlots) {
+    const lastGroup = serviceGroups[serviceGroups.length - 1];
 
-    if (!isAnyEmployeeAvailable(
-      group.profession,
-      group.startTime,
-      duration,
-      employees,
-      existingReservations
-    )) {
-      console.log(`Cannot book ${group.profession} from ${group.startTime.toFormat('HH:mm')} to ${group.endTime.toFormat('HH:mm')}`);
-      return false;
+    // Merge consecutive services of the same profession
+    if (lastGroup &&
+        lastGroup.profession === slot.profession &&
+        lastGroup.endTime.equals(slot.startTime)) {
+      lastGroup.endTime = slot.endTime;
+    } else {
+      serviceGroups.push({ ...slot });
     }
   }
 
-  return true;
+  console.log(`Checking ${services.length} services in ${serviceGroups.length} groups at ${startTime.toFormat('HH:mm')}`);
+
+  // Use backtracking to find a valid assignment
+  const assignment = new Map<number, string>();
+  const canBook = findValidAssignment(serviceGroups, employees, existingReservations, 0, assignment);
+
+  if (canBook && assignment.size > 0) {
+    console.log(`✓ Found valid assignment:`,
+      Array.from(assignment.entries()).map(([idx, emp]) => ({
+        group: serviceGroups[idx].profession,
+        time: `${serviceGroups[idx].startTime.toFormat('HH:mm')}-${serviceGroups[idx].endTime.toFormat('HH:mm')}`,
+        employee: emp
+      }))
+    );
+  } else if (!canBook) {
+    console.log(`✗ No valid assignment found for ${startTime.toFormat('HH:mm')}`);
+  }
+
+  return canBook;
 }
 
 /**

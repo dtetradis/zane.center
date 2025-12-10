@@ -14,6 +14,7 @@ interface CartState {
   updateItemEmployee: (serviceId: string, employee: string) => void;
   clearCart: () => void;
   setStore: (storeId: string, storeName: string) => void;
+  validateCartItems: (validServiceIds: string[]) => void;
 
   // Computed
   getTotalDuration: () => number;
@@ -83,6 +84,22 @@ export const useCartStore = create<CartState>()(
 
       setStore: (storeId, storeName) => {
         set({ storeId, storeName });
+      },
+
+      validateCartItems: (validServiceIds) => {
+        set((state) => {
+          const validItems = state.items.filter(item =>
+            validServiceIds.includes(item.service.id)
+          );
+
+          // Only update if items were removed
+          if (validItems.length !== state.items.length) {
+            console.log(`Removed ${state.items.length - validItems.length} invalid items from cart`);
+            return { items: validItems };
+          }
+
+          return state;
+        });
       },
 
       getTotalDuration: () => {
