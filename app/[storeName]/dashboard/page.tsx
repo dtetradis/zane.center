@@ -208,6 +208,9 @@ export default function DashboardPage({ params }: { params: { storeName: string 
 
   const supabase = createClient();
 
+  // Polling interval in milliseconds (30 seconds)
+  const POLLING_INTERVAL = 30000;
+
   useEffect(() => {
     fetchAllData();
 
@@ -226,6 +229,46 @@ export default function DashboardPage({ params }: { params: { storeName: string 
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  // Polling for new reservations
+  useEffect(() => {
+    if (!store?.id) return;
+
+    const pollReservations = async () => {
+      try {
+        const { data: reservationsData } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('id_store', store.id)
+          .order('date_time', { ascending: true });
+
+        if (reservationsData) {
+          setAllReservations(reservationsData);
+          // Update filtered reservations based on current search term
+          if (searchTerm) {
+            const filtered = reservationsData.filter(
+              (r) =>
+                r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                r.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                r.phone.includes(searchTerm)
+            );
+            setFilteredReservations(filtered);
+          } else {
+            setFilteredReservations(reservationsData);
+          }
+          setTotalReservations(reservationsData.length);
+        }
+      } catch (error) {
+        console.error('Error polling reservations:', error);
+      }
+    };
+
+    // Set up polling interval
+    const intervalId = setInterval(pollReservations, POLLING_INTERVAL);
+
+    // Cleanup on unmount
+    return () => clearInterval(intervalId);
+  }, [store?.id, searchTerm]);
 
   // Derive dayReservations from allReservations based on selected date
   // This eliminates race conditions and ensures consistency
