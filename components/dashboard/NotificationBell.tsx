@@ -90,7 +90,7 @@ export default function NotificationBell({ reservations, onNotificationClick }: 
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute left-full ml-2 top-0 w-80 bg-surface border border-border rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+        <div className="absolute right-0 top-full mt-2 w-80 bg-surface border border-border rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
           {/* Header */}
           <div className="px-4 py-3 border-b border-border">
             <h3 className="font-semibold text-text">{t('dashboard.notifications.title')}</h3>
